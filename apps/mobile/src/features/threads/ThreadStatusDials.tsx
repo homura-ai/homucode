@@ -32,7 +32,6 @@ const DIAL_SIZE = 26;
 const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const appVersion = Constants.expoConfig?.version ?? null;
-const FABLE = "Fable";
 
 function useUsedPalette() {
   const { themeAppearance, themeVariables } = useAppearancePreferences();
@@ -320,14 +319,6 @@ export function ThreadStatusDialStrip(props: {
               compact: limitWidth(stats.weekly, compactWeeklyLabel),
             },
           ] as const)),
-      ...(stats.fableWeekly === null
-        ? []
-        : ([
-            {
-              id: "fableWeekly",
-              full: limitWidth(stats.fableWeekly, FABLE),
-            },
-          ] as const)),
       ...(stats.fiveHour === null
         ? []
         : ([{ id: "fiveHour", full: limitWidth(stats.fiveHour, "5h") }] as const)),
@@ -388,14 +379,6 @@ export function ThreadStatusDialStrip(props: {
           title={gt("Weekly limit")}
           showDepletionRatio={showDepletionRatio}
           caption={compact ? compactWeeklyLabel : weeklyLabel}
-        />
-      )}
-      {stats.fableWeekly === null || !visible.has("fableWeekly") ? null : (
-        <LimitDial
-          limit={stats.fableWeekly}
-          nowMs={nowMs}
-          title={gt("Fable weekly limit")}
-          caption={FABLE}
         />
       )}
       {cost === null || !visible.has("cost") ? null : (
@@ -598,9 +581,6 @@ export function ThreadStatusDialDetails(props: {
         )}
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
-        )}
-        {stats.fableWeekly === null ? null : (
-          <LimitFact name={gt("Fable weekly limit")} limit={stats.fableWeekly} nowMs={nowMs} />
         )}
         {stats.cost === null ? null : (
           <Fact

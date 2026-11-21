@@ -21,10 +21,17 @@ export class StatusLineAccounting extends Context.Reference<{
   defaultValue: () => ({ read: () => Effect.succeed(null) }),
 }) {}
 
-// Measured plan/API shares from 01-1's subsidy README, November 2026.
+// Measured plan/API shares from 01-1's subsidy README, November 2026. CLIProxyAPI reports
+// every Claude account as "Claude Subscription", so an untiered one takes Ultra's share.
+const CLAUDE_SUBSCRIPTION_PLANS = new Set([
+  "Ultra",
+  "Claude Ultra Subscription",
+  "Claude Subscription",
+]);
+
 function subscriptionShare(provider: "codex" | "claude", plan: string | undefined, model: string) {
   if (provider === "codex" && plan === "ChatGPT Pro 100 Subscription") return 0.047;
-  if (provider === "claude" && (plan === "Ultra" || plan === "Claude Ultra Subscription")) {
+  if (provider === "claude" && plan !== undefined && CLAUDE_SUBSCRIPTION_PLANS.has(plan)) {
     if (/(?:^|[-/])fable(?:-|$)/i.test(model)) return 0.057;
     if (/(?:^|[-/])(?:opus|sonnet|haiku)(?:-|$)/i.test(model)) return 0.032;
   }
@@ -89,6 +96,9 @@ function recordForTurn(
     model,
     speed,
     reportedCostUsd: null,
+    ...(usage.cacheCreation1hTokens === undefined
+      ? {}
+      : { cacheCreation1hTokens: usage.cacheCreation1hTokens }),
     totals: {
       uncachedInputTokens: Math.max(0, usage.inputTokens - cached - write),
       cachedInputTokens: cached,
@@ -179,7 +189,19 @@ const make = Effect.gen(function* () {
           }
           if (turn.turnTokenUsage?.localCommand) continue;
           const record = recordForTurn(turn, selections.get(turn.runAttemptId!) ?? null);
-          if (record === null || turn.turnTokenUsage?.usageStatus !== "complete") partial = true;
+          // Without Claude's TTL split, cache writes are priced at the cheaper five-minute rate.
+          const unknownCacheTtl =
+            driver === "claudeAgent" &&
+            record !== null &&
+            record.totals.cacheCreationTokens > 0 &&
+            record.cacheCreation1hTokens === undefined;
+          if (
+            record === null ||
+            unknownCacheTtl ||
+            turn.turnTokenUsage?.usageStatus !== "complete"
+          ) {
+            partial = true;
+          }
           if (record !== null) records.push(record);
         }
         const kind = driver === "codex" ? "codex" : "claude";

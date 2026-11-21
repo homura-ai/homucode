@@ -158,6 +158,18 @@ it.effect("uses the measured plan share per priced model and leaves unpriced tot
     const ultra = summarizeStatusLineCost("claude", "Ultra", records, [priced, priced], false);
     assert.strictEqual(ultra.apiCostUsd, 20);
     assert.closeTo(ultra.subscriptionCostUsd!, 0.89, 1e-12);
+    // CLIProxyAPI names every Claude account this way, without a tier.
+    assert.closeTo(
+      summarizeStatusLineCost("claude", "Claude Subscription", records, [priced, priced], false)
+        .subscriptionCostUsd!,
+      0.89,
+      1e-12,
+    );
+    assert.strictEqual(
+      summarizeStatusLineCost("claude", "Claude Pro Subscription", records, [priced, priced], false)
+        .subscriptionCostUsd,
+      null,
+    );
     assert.deepStrictEqual(
       summarizeStatusLineCost("claude", undefined, records, [priced, unpriced], false),
       {

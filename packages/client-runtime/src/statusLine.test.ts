@@ -452,7 +452,6 @@ describe("buildStatusLineInput", () => {
         resetsAtMs: Date.parse(reset),
       },
       weekly: { remainingPercent: 40, resetsAtMs: null },
-      fableWeekly: { remainingPercent: 10, resetsAtMs: null },
     });
     expect(buildStatusLineInput(routed).rate_limits).toEqual({
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
@@ -711,7 +710,7 @@ describe("buildStatusLineInput", () => {
     },
   );
 
-  it("keeps Claude's Fable weekly allowance separate from the main window and script input", () => {
+  it("never takes a scoped Claude weekly window, such as Fable's, for the main one", () => {
     const provider = source.providers[0]!;
     const limits = provider.usageLimits!;
     const fable = {
@@ -724,18 +723,12 @@ describe("buildStatusLineInput", () => {
       ...source,
       providers: [{ ...provider, usageLimits: { ...limits, windows: [fable, ...limits.windows] } }],
     };
-    expect(buildStatusLineStats(withFable)).toMatchObject({
-      weekly: { remainingPercent: 57 },
-      fableWeekly: { remainingPercent: 20 },
-    });
+    expect(buildStatusLineStats(withFable).weekly).toMatchObject({ remainingPercent: 57 });
     const onlyFable = {
       ...source,
       providers: [{ ...provider, usageLimits: { ...limits, windows: [fable] } }],
     };
-    expect(buildStatusLineStats(onlyFable)).toMatchObject({
-      weekly: null,
-      fableWeekly: { remainingPercent: 20 },
-    });
+    expect(buildStatusLineStats(onlyFable).weekly).toBeNull();
     expect(buildStatusLineInput(onlyFable)).not.toHaveProperty("rate_limits");
   });
 
@@ -758,7 +751,6 @@ describe("buildStatusLineInput", () => {
         resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z"),
       },
       weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
-      fableWeekly: { remainingPercent: 10, projectedRemainingPercent: null, resetsAtMs: null },
       cachePercent: 99,
       inputTokens: 338_000,
       outputTokens: 21_400,
@@ -844,7 +836,12 @@ describe("status line presentation", () => {
       compact: true,
       visible: new Set(["weekly", "fiveHour", "cost"]),
     });
+    // 5h no longer fits, but cost after it still does.
     expect(fitStatusLineItems(175, core, items)).toEqual({
+      compact: true,
+      visible: new Set(["weekly", "cost"]),
+    });
+    expect(fitStatusLineItems(140, core, items)).toEqual({
       compact: true,
       visible: new Set(["weekly"]),
     });

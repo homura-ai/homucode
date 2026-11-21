@@ -150,7 +150,7 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 Enable **Settings → HomuCode → Agent behavior → Status line** to show context use and quota
 in the top bar. The context dial shows the percentage used and the token count. The 5-hour
-and weekly dials show the percentage remaining. Claude shows a separate Fable weekly dial when it reports that allowance. A tick marks the projected remainder at
+and weekly dials show the percentage remaining. A tick marks the projected remainder at
 reset, and the dial takes its color from that projection when timing is available. In a
 narrow bar, labels shorten and the weekly limit stays visible longer than the 5-hour limit.
 On desktop and web, the model picker colors the reasoning effort. On mobile, the status

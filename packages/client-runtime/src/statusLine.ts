@@ -58,16 +58,6 @@ function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWind
   );
 }
 
-function fableWeeklyWindow(window: ServerProviderUsageWindow): boolean {
-  return (
-    window.kind === "weekly" &&
-    (window.id === "seven_day_fable" ||
-      (window.modelIds !== undefined &&
-        window.modelIds.length > 0 &&
-        window.modelIds.every((model) => /(?:^|[-/])fable(?:-|$)/i.test(model))))
-  );
-}
-
 function hubUsageWindows(
   provider: ServerProvider,
   sources: UsageLimitSourceSnapshots,
@@ -98,9 +88,7 @@ function hubUsageWindows(
               windows: account.usageLimits.windows.filter(
                 (window) =>
                   (window.resetsAt === undefined || Date.parse(window.resetsAt) > now) &&
-                  (includeAll ||
-                    summaryWindow(provider, window) ||
-                    (provider.driver === "claudeAgent" && fableWeeklyWindow(window))),
+                  (includeAll || summaryWindow(provider, window)),
               ),
             },
           },
@@ -161,6 +149,8 @@ function providerUsageWindows(
     ...hubWindows,
     ...nativeWindows.filter(
       (window) =>
+        // Claude's scoped weekly windows, such as `seven_day_fable`, never stand in for its main one.
+        (includeAll || provider.driver !== "claudeAgent" || summaryWindow(provider, window)) &&
         !hubWindows.some(
           (hub) =>
             hub.kind === window.kind &&
@@ -199,7 +189,7 @@ function findUsageWindow(
   windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
 ) {
-  const matching = windows.filter((window) => window.kind === kind && !fableWeeklyWindow(window));
+  const matching = windows.filter((window) => window.kind === kind);
   return matching.find((candidate) => candidate.modelIds === undefined) ?? matching[0];
 }
 
@@ -324,7 +314,6 @@ export interface StatusLineStats {
   readonly contextMaxTokens: number | null;
   readonly fiveHour: StatusLineLimit | null;
   readonly weekly: StatusLineLimit | null;
-  readonly fableWeekly: StatusLineLimit | null;
   readonly cachePercent: number | null;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
@@ -371,7 +360,6 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
   const windows = usageWindows(source);
   const inputTokens = context?.inputTokens ?? null;
   const cachedInputTokens = context?.cachedInputTokens ?? null;
-  const fable = provider?.driver === "claudeAgent" ? windows.find(fableWeeklyWindow) : undefined;
   return {
     modelName: statusLineInputModelName(source),
     effort: effortLevel(selection, model) ?? null,
@@ -390,7 +378,6 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
     contextMaxTokens: context?.maxTokens ?? null,
     fiveHour: statusLineLimit(windows, "session", source.nowMs),
     weekly: statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio),
-    fableWeekly: fable === undefined ? null : limitFromWindow(fable, source.nowMs),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
         ? 100 * Math.min(1, cachedInputTokens / inputTokens)
@@ -497,7 +484,7 @@ export function fitStatusLineItems<Item extends string>(
   const visible = new Set<Item>();
   for (const item of items) {
     const itemWidth = compact ? (item.compact ?? item.full) : item.full;
-    if (itemWidth > available) break;
+    if (itemWidth > available) continue;
     visible.add(item.id);
     available -= itemWidth;
   }

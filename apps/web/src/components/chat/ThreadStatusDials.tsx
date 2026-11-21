@@ -253,9 +253,7 @@ export function StatusDialStrip(props: {
             nowMs={nowMs}
             name="5h"
             title={gt("5-hour limit")}
-            className={
-              stats.fableWeekly === null ? "@max-[10rem]/dials:hidden" : "@max-[15rem]/dials:hidden"
-            }
+            className="@max-[10rem]/dials:hidden"
           />
         )}
         {stats.weekly === null ? null : (
@@ -270,15 +268,6 @@ export function StatusDialStrip(props: {
             }
             title={gt("Weekly limit")}
             className="@max-[6.5rem]/dials:hidden"
-          />
-        )}
-        {stats.fableWeekly === null ? null : (
-          <LimitDial
-            limit={stats.fableWeekly}
-            nowMs={nowMs}
-            name="Fable"
-            title={gt("Fable weekly limit")}
-            className="@max-[10rem]/dials:hidden"
           />
         )}
         {cost === null ? null : (
@@ -467,9 +456,6 @@ export function StatusDialCard(props: {
         )}
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
-        )}
-        {stats.fableWeekly === null ? null : (
-          <LimitFact name={gt("Fable weekly limit")} limit={stats.fableWeekly} nowMs={nowMs} />
         )}
         {stats.cost === null ? null : (
           <Fact
