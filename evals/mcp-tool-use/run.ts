@@ -2082,6 +2082,7 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
     isT3Name(call.name) &&
     name === "t3_keybinding" &&
     input.action === "upsert" &&
+    typeof input.command === "string" &&
     !(STATIC_KEYBINDING_COMMANDS as ReadonlyArray<unknown>).includes(input.command)
   ) {
     return failed(unknownKeybindingCommandMessage());
