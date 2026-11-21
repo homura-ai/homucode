@@ -91,7 +91,8 @@ const ThreadDiffTool = Tool.make("t3_thread_diff", {
 const KeybindingTool = Tool.make("t3_keybinding", {
   ...shared,
   description:
-    "Add, change, or remove a T3 Code keyboard shortcut, only when the user asks. upsert: bind `key` (such as `mod+shift+k`) to a T3 `command` id; an unknown id returns the valid ones. Optional `when` clause; `replace` names the rule it replaces. remove: drop the rule `replace` names. Asks the user first below full access.",
+    "Add, change, or remove a T3 Code keyboard shortcut, only when the user asks. upsert: bind `key` (such as `mod+shift+k`) to a built-in `command` id; an unknown id returns the valid ones. Optional `when` clause; `replace` names the rule it replaces. remove: drop the rule `replace` names. Asks the user first below full access. " +
+    'A key can also run a script, which this tool does not bind. When no built-in does what the user wants, write an app script at `~/.t3/userdata/scripts/<name>.ts` (T3 home\'s `userdata`): `export default async (t3: T3App) => {...}`, where `t3.current()` gives the open project and thread, `t3.command(id)` runs a built-in, and window APIs such as `navigator.clipboard` work. Then add `{"key": ..., "command": "user.<name>.run"}` to `~/.t3/userdata/keybindings.json`. Or bind `bash:<command>` there, which runs one shell line in a new terminal in the thread\'s checkout. App scripts run only once the user turns on Settings → HomuCode → App scripts on that device; agents cannot, so tell the user.',
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     action: Schema.Literals(["upsert", "remove"]),

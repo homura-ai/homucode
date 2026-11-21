@@ -26,6 +26,9 @@ export const DIFF_PAGE_CHARS = 40_000;
 const decodeRemoveKeybinding = Schema.decodeUnknownEffect(ServerRemoveKeybindingInput);
 const decodeUpsertKeybinding = Schema.decodeUnknownEffect(ServerUpsertKeybindingInput);
 
+export const unknownKeybindingCommandMessage = () =>
+  `This tool binds only built-in commands. Valid: ${STATIC_KEYBINDING_COMMANDS.join(", ")}. A script (\`user.<name>.run\` or \`bash:<command>\`) goes in \`~/.t3/userdata/keybindings.json\` instead; this tool's description says how.`;
+
 const invalid = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
 
@@ -143,9 +146,7 @@ export const layer = McpToolAccess.toLayer(AppToolkit, {
           }
           const command = yield* required(input.command, "command");
           if (!(STATIC_KEYBINDING_COMMANDS as ReadonlyArray<string>).includes(command)) {
-            return yield* invalid(
-              `Agents can bind only built-in commands, not scripts. Valid: ${STATIC_KEYBINDING_COMMANDS.join(", ")}.`,
-            );
+            return yield* invalid(unknownKeybindingCommandMessage());
           }
           const rule = yield* decodeUpsertKeybinding({
             key: yield* required(input.key, "key"),

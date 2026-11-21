@@ -190,7 +190,7 @@ it.effect("a keybinding binds only built-in commands with valid shortcut syntax"
         Effect.map((chunks) => chunks.at(-1)?.result),
       );
     expect(JSON.stringify(yield* upsert({ key: "mod+k", command: "bash:rm -rf ~" }))).toContain(
-      "only built-in commands",
+      "`user.<name>.run` or `bash:<command>`",
     );
     expect(JSON.stringify(yield* upsert({ key: "mod+k+j", command: "chat.new" }))).toContain(
       "not valid shortcut syntax",
