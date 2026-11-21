@@ -32,7 +32,6 @@ const DIAL_SIZE = 26;
 const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const appVersion = Constants.expoConfig?.version ?? null;
-const MODEL_NAME_COLORS = { light: "#6f3f99", dark: "#d8afff" };
 
 function useUsedColor(percent: number) {
   const { themeAppearance, themeVariables } = useAppearancePreferences();
@@ -175,24 +174,18 @@ function effortLabel(effort: string): string {
   }
 }
 
-function Effort({ effort }: { readonly effort: string }) {
-  const { themeAppearance } = useAppearancePreferences();
-  const position = statusLineEffortPosition(effort);
+function effortTextStyle(effort: string | null, themeAppearance: "light" | "dark") {
+  const position = effort === null ? undefined : statusLineEffortPosition(effort);
+  if (position === undefined) return undefined;
   const variant = themeAppearance === "dark" ? 1 : 0;
   const [low, medium, high, extraHigh, max] = STATUS_LINE_EFFORT_COLORS;
-  const color =
-    position === undefined
-      ? undefined
-      : statusLineColorMix(
-          position,
-          [low[variant], medium[variant], high[variant], extraHigh[variant], max[variant]],
-          statusLineNativeColorMix,
-        );
-  return (
-    <Text numberOfLines={1} className="text-2xs" style={{ color }}>
-      {effortLabel(effort)}
-    </Text>
-  );
+  return {
+    color: statusLineColorMix(
+      position,
+      [low[variant], medium[variant], high[variant], extraHigh[variant], max[variant]],
+      statusLineNativeColorMix,
+    ),
+  };
 }
 
 function useLimitNote(limit: StatusLineLimit, nowMs: number) {
@@ -295,6 +288,7 @@ export function ThreadStatusDialStrip(props: {
   const gt = useGT();
   const { themeAppearance, themeVariables } = useAppearancePreferences();
   const { stats, nowMs, availableWidth, fontScale } = props;
+  const effortStyle = effortTextStyle(stats.effort, themeAppearance);
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
   const contextLabel = gt("Context", { $context: "model context window" });
   const compactContextLabel = gt("ctx", { $context: "short label for model context" });
@@ -375,11 +369,15 @@ export function ThreadStatusDialStrip(props: {
             medium
             numberOfLines={1}
             className="max-w-24 shrink text-xs font-medium"
-            style={{ color: MODEL_NAME_COLORS[themeAppearance] }}
+            style={effortStyle}
           >
             {stats.modelName}
           </Text>
-          {stats.effort === null ? null : <Effort effort={stats.effort} />}
+          {stats.effort === null ? null : (
+            <Text numberOfLines={1} className="text-2xs" style={effortStyle}>
+              {effortLabel(stats.effort)}
+            </Text>
+          )}
         </View>
       )}
       {stats.contextPercent !== null && context !== null ? (
@@ -585,6 +583,7 @@ export function ThreadStatusDialDetails(props: {
   const gt = useGT();
   const { themeAppearance } = useAppearancePreferences();
   const { stats, nowMs } = props;
+  const effortStyle = effortTextStyle(stats.effort, themeAppearance);
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
   return (
@@ -650,11 +649,13 @@ export function ThreadStatusDialDetails(props: {
         )}
         {stats.modelName === null ? null : (
           <Fact name={gt("Model")}>
-            <Text style={{ color: MODEL_NAME_COLORS[themeAppearance] }}>{stats.modelName}</Text>
+            <Text style={effortStyle}>{stats.modelName}</Text>
             {stats.effort === null ? null : (
               <>
                 {" "}
-                <Effort effort={stats.effort} />
+                <Text numberOfLines={1} className="text-2xs" style={effortStyle}>
+                  {effortLabel(stats.effort)}
+                </Text>
               </>
             )}
           </Fact>
