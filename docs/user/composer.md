@@ -149,8 +149,10 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 ## Status line
 
 Enable **Settings → HomuCode → Agent behavior → Status line** to show the thread's status in the top bar beside
-its title. Three dials show what runs out: context use, the 5-hour limit and the weekly
-limit, each with the percentage used inside. Beside them are the model, its effort as
+its title. The context dial shows the percentage used. The 5-hour and weekly dials show
+the percentage of quota remaining. A tick marks what will remain at the next reset if
+usage continues at the same pace. The dial's color follows that estimate when timing is
+available. Beside the dials are the model, its effort as
 signal bars, and small icons for uptime, cache hits and tokens in and out. When the top
 bar is short of room, the small icons go first, then the captions beside the dials.
 The clock stays at the right of the thread header, even when the status line is off.

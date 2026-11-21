@@ -5,6 +5,7 @@ import {
   formatStatusLineTokens,
   statusLineEffortBars,
   statusLineGaugePercent,
+  statusLineGaugeTickRotation,
   statusLineGaugeTone,
   statusLineLimitEnded,
   statusLineLimitRemaining,
@@ -27,12 +28,19 @@ import type { MessageResolver } from "../../i18n/messages";
 
 const EFFORT_BAR_HEIGHTS = ["h-1", "h-1.5", "h-2", "h-2.5", "h-3"];
 
-function gaugeColor(percent: number, kind: "context" | "limit"): string {
+function gaugeColor(
+  percent: number,
+  kind: "context" | "limit",
+  projectedRemainingPercent?: number | null,
+): string {
   return {
-    error: "var(--destructive)",
+    error:
+      kind === "context"
+        ? "light-dark(var(--color-red-700), var(--color-red-400))"
+        : "var(--destructive)",
     warning: "var(--warning-foreground)",
     success: "var(--success-foreground)",
-  }[statusLineGaugeTone(percent, kind)];
+  }[statusLineGaugeTone(percent, kind, projectedRemainingPercent)];
 }
 
 function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolver): string {
@@ -64,7 +72,11 @@ function Effort(props: { readonly effort: string }) {
 }
 
 // At the error level the disc fills too, since a theme's error color can sit close to its accent.
-function Ring(props: { readonly percent: number; readonly alarm: boolean }) {
+function Ring(props: {
+  readonly percent: number;
+  readonly alarm: boolean;
+  readonly projectedRemainingPercent?: number | null;
+}) {
   return (
     <svg viewBox="0 0 26 26" className="size-[26px] shrink-0" aria-hidden>
       <circle
@@ -91,6 +103,18 @@ function Ring(props: { readonly percent: number; readonly alarm: boolean }) {
           transform="rotate(-90 13 13)"
         />
       )}
+      {props.projectedRemainingPercent == null ? null : (
+        <line
+          x1="13"
+          y1="1"
+          x2="13"
+          y2="6"
+          stroke="var(--foreground)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          transform={`rotate(${statusLineGaugeTickRotation(props.projectedRemainingPercent)} 13 13)`}
+        />
+      )}
       <text
         x="13"
         y="13.4"
@@ -108,6 +132,7 @@ function Ring(props: { readonly percent: number; readonly alarm: boolean }) {
 function Dial(props: {
   readonly percent: number;
   readonly kind: "context" | "limit";
+  readonly projectedRemainingPercent?: number | null;
   readonly name: string;
   readonly detail: ReactNode;
   readonly label: string;
@@ -119,9 +144,15 @@ function Dial(props: {
       role="img"
       aria-label={props.label}
       className={`flex shrink-0 items-center gap-1.5 ${props.className ?? ""}`}
-      style={{ color: gaugeColor(percent, props.kind) }}
+      style={{ color: gaugeColor(percent, props.kind, props.projectedRemainingPercent) }}
     >
-      <Ring percent={percent} alarm={statusLineGaugeTone(percent, props.kind) === "error"} />
+      <Ring
+        percent={percent}
+        projectedRemainingPercent={props.projectedRemainingPercent ?? null}
+        alarm={
+          statusLineGaugeTone(percent, props.kind, props.projectedRemainingPercent) === "error"
+        }
+      />
       <span className="grid @max-[20rem]/dials:hidden">
         <span className="font-medium text-2xs/3.5 text-foreground">{props.name}</span>
         {props.detail === null ? null : (
@@ -144,10 +175,17 @@ function LimitDial(props: {
   const gt = useGT();
   const left = statusLineLimitRemaining(props.limit, props.nowMs);
   const note = limitNote(props.limit, props.nowMs, useMessages());
+  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const remaining = gt("{percent}% remaining", { percent: remainingPercent });
+  const projected =
+    projectedRemainingPercent === null
+      ? ""
+      : gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent });
   return (
     <Dial
-      percent={props.limit.usedPercent}
+      percent={remainingPercent}
       kind="limit"
+      projectedRemainingPercent={projectedRemainingPercent}
       name={props.name}
       detail={
         left === null ? null : (
@@ -157,15 +195,7 @@ function LimitDial(props: {
           </>
         )
       }
-      label={
-        note === ""
-          ? gt("{title} {percent}% used", { title: props.title, percent: props.limit.usedPercent })
-          : gt("{title} {percent}% used, {note}", {
-              title: props.title,
-              percent: props.limit.usedPercent,
-              note,
-            })
-      }
+      label={[props.title, remaining, note, projected].filter(Boolean).join(", ")}
       className={`${props.className} ${statusLineLimitEnded(props.limit, props.nowMs) ? "opacity-50" : ""}`}
     />
   );
@@ -297,7 +327,11 @@ export function StatusDialStrip(props: {
 
 function Fact(props: {
   readonly name: string;
-  readonly meter?: { readonly percent: number; readonly kind: "context" | "limit" };
+  readonly meter?: {
+    readonly percent: number;
+    readonly kind: "context" | "limit";
+    readonly projectedRemainingPercent?: number | null;
+  };
   readonly dimmed?: boolean;
   readonly children: ReactNode;
 }) {
@@ -309,7 +343,13 @@ function Fact(props: {
         <span
           aria-hidden
           className="mt-0.5 h-1 overflow-hidden rounded-full bg-current/20"
-          style={{ color: gaugeColor(props.meter.percent, props.meter.kind) }}
+          style={{
+            color: gaugeColor(
+              props.meter.percent,
+              props.meter.kind,
+              props.meter.projectedRemainingPercent,
+            ),
+          }}
         >
           <span
             className="block h-full rounded-full bg-current"
@@ -326,14 +366,20 @@ function LimitFact(props: {
   readonly limit: StatusLineLimit;
   readonly nowMs: number;
 }) {
+  const gt = useGT();
   const note = limitNote(props.limit, props.nowMs, useMessages());
+  const { remainingPercent, projectedRemainingPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: props.limit.usedPercent, kind: "limit" }}
+      meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
     >
-      {props.limit.usedPercent}%{note === "" ? null : ` · ${note}`}
+      {gt("{percent}% remaining", { percent: remainingPercent })}
+      {note === "" ? null : ` · ${note}`}
+      {projectedRemainingPercent === null
+        ? null
+        : ` · ${gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent })}`}
     </Fact>
   );
 }

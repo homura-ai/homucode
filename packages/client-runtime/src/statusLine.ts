@@ -12,6 +12,8 @@ import {
 import {
   collectLimitPools,
   collectProviderUsageLimits,
+  projectedWindowUsedPercent,
+  remainingPercent,
   usageLimitSourceAtEndpoint,
 } from "@t3tools/shared/usageLimits";
 
@@ -35,6 +37,11 @@ export type StatusLineUsageSource = Pick<
   "providers" | "usageLimitSources" | "nowMs"
 >;
 
+type StatusLineUsageWindow = ServerProviderUsageWindow & {
+  readonly remainingPercent?: number;
+  readonly projectedUsedPercent?: number | null;
+};
+
 function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWindow): boolean {
   return (
     window.modelIds === undefined &&
@@ -50,7 +57,7 @@ function hubUsageWindows(
   sources: UsageLimitSourceSnapshots,
   now: number,
   includeAll: boolean,
-): ReadonlyArray<ServerProviderUsageWindow> {
+): ReadonlyArray<StatusLineUsageWindow> {
   if (!provider.auth.endpoint) return [];
   const hub = usageLimitSourceAtEndpoint(sources, provider.auth.endpoint, {
     useProviderRoute: provider.driver === "claudeAgent",
@@ -93,13 +100,15 @@ function hubUsageWindows(
         ...(reported?.providerIds === undefined ? {} : { providerIds: reported.providerIds }),
         kind: window.kind,
         usedPercent: window.usedPercent,
+        remainingPercent: window.remainingPercent,
+        projectedUsedPercent: window.projectedUsedPercent,
         ...(resetsAt === undefined ? {} : { resetsAt }),
       };
     }) ?? []
   );
 }
 
-function usageWindows(source: StatusLineInputSource): ReadonlyArray<ServerProviderUsageWindow> {
+function usageWindows(source: StatusLineInputSource): ReadonlyArray<StatusLineUsageWindow> {
   const instanceId = source.modelSelection?.instanceId;
   const provider = source.providers.find((candidate) => candidate.instanceId === instanceId);
   if (instanceId === undefined || !provider) return [];
@@ -110,7 +119,7 @@ function providerUsageWindows(
   provider: ServerProvider,
   source: StatusLineUsageSource,
   includeAll: boolean,
-): ReadonlyArray<ServerProviderUsageWindow> {
+): ReadonlyArray<StatusLineUsageWindow> {
   const { instanceId } = provider;
   const hubWindows = hubUsageWindows(provider, source.usageLimitSources, source.nowMs, includeAll);
   const report = collectProviderUsageLimits(
@@ -149,7 +158,6 @@ export function buildStatusLineModelUsage(source: StatusLineUsageSource) {
         name: resolveProviderInstanceDisplayName(provider),
         models: [...names.values()],
         limits: providerUsageWindows(provider, source, true).map((window) => {
-          const resetsAtMs = window.resetsAt ? Date.parse(window.resetsAt) : Number.NaN;
           return {
             id: window.id,
             label: window.label,
@@ -157,20 +165,26 @@ export function buildStatusLineModelUsage(source: StatusLineUsageSource) {
               ...(window.modelIds?.map((id) => names.get(id) ?? id) ?? []),
               ...(window.providerIds ?? []),
             ],
-            usedPercent: Math.round(window.usedPercent),
-            resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
+            ...limitFromWindow(window, source.nowMs),
           };
         }),
       };
     });
 }
 
-function rateLimit(
-  windows: ReadonlyArray<ServerProviderUsageWindow>,
+function findUsageWindow(
+  windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
 ) {
   const matching = windows.filter((window) => window.kind === kind);
-  const window = matching.find((candidate) => candidate.modelIds === undefined) ?? matching[0];
+  return matching.find((candidate) => candidate.modelIds === undefined) ?? matching[0];
+}
+
+function rateLimit(
+  windows: ReadonlyArray<StatusLineUsageWindow>,
+  kind: ServerProviderUsageWindow["kind"],
+) {
+  const window = findUsageWindow(windows, kind);
   if (window === undefined) return undefined;
   const resetsAt = window.resetsAt === undefined ? Number.NaN : Date.parse(window.resetsAt);
   return {
@@ -226,7 +240,8 @@ export function statusLineInputModelName(
 }
 
 export interface StatusLineLimit {
-  readonly usedPercent: number;
+  readonly remainingPercent: number;
+  readonly projectedRemainingPercent: number | null;
   readonly resetsAtMs: number | null;
 }
 
@@ -247,16 +262,23 @@ export interface StatusLineStats {
   readonly outputTokens: number | null;
 }
 
-function statusLineLimit(
-  windows: ReadonlyArray<ServerProviderUsageWindow>,
-  kind: ServerProviderUsageWindow["kind"],
-): StatusLineLimit | null {
-  const limit = rateLimit(windows, kind);
-  if (limit === undefined) return null;
+function limitFromWindow(window: StatusLineUsageWindow, nowMs: number): StatusLineLimit {
+  const resetsAtMs = window.resetsAt === undefined ? Number.NaN : Date.parse(window.resetsAt);
+  const projected = window.projectedUsedPercent ?? projectedWindowUsedPercent(window, nowMs);
   return {
-    usedPercent: limit.used_percentage,
-    resetsAtMs: limit.resets_at === undefined ? null : limit.resets_at * 1000,
+    remainingPercent: window.remainingPercent ?? remainingPercent(window),
+    projectedRemainingPercent: projected === null ? null : Math.round(100 - projected),
+    resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
   };
+}
+
+function statusLineLimit(
+  windows: ReadonlyArray<StatusLineUsageWindow>,
+  kind: ServerProviderUsageWindow["kind"],
+  nowMs: number,
+): StatusLineLimit | null {
+  const window = findUsageWindow(windows, kind);
+  return window === undefined ? null : limitFromWindow(window, nowMs);
 }
 
 /** The same facts `buildStatusLineInput` gives a script, typed for a client to draw. */
@@ -278,8 +300,8 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
         : Math.round(context.usedPercentage),
     contextTokens: context?.usedTokens ?? null,
     contextMaxTokens: context?.maxTokens ?? null,
-    fiveHour: statusLineLimit(windows, "session"),
-    weekly: statusLineLimit(windows, "weekly"),
+    fiveHour: statusLineLimit(windows, "session", source.nowMs),
+    weekly: statusLineLimit(windows, "weekly", source.nowMs),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
         ? Math.round(Math.min(1, cachedInputTokens / inputTokens) * 100)
@@ -302,11 +324,17 @@ export function statusLineGaugePercent(percent: number): number {
 export function statusLineGaugeTone(
   percent: number,
   kind: "context" | "limit",
+  projectedRemainingPercent?: number | null,
 ): "success" | "warning" | "error" {
   // A long context window is fine half full; a usage limit half spent is worth a look.
   const [warning, error] = kind === "context" ? [70, 90] : [50, 80];
-  if (percent >= error) return "error";
-  return percent >= warning ? "warning" : "success";
+  const used = kind === "context" ? percent : 100 - (projectedRemainingPercent ?? percent);
+  if (used >= error) return "error";
+  return used >= warning ? "warning" : "success";
+}
+
+export function statusLineGaugeTickRotation(percent: number): number {
+  return statusLineGaugePercent(percent) * 3.6;
 }
 
 export function statusLineLimitEnded(limit: StatusLineLimit, nowMs: number): boolean {

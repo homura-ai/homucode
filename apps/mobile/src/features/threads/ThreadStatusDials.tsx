@@ -3,6 +3,7 @@ import {
   formatStatusLineTokens,
   statusLineEffortBars,
   statusLineGaugePercent,
+  statusLineGaugeTickRotation,
   statusLineGaugeTone,
   statusLineLimitEnded,
   statusLineLimitRemaining,
@@ -13,7 +14,7 @@ import {
 import { useGT } from "gt-react-native";
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import Svg, { Circle, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -25,14 +26,23 @@ const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const EFFORT_HEIGHTS = [4, 6, 8, 10, 12];
 
-function useGaugeColor(percent: number, kind: GaugeKind) {
+function useGaugeColor(
+  percent: number,
+  kind: GaugeKind,
+  projectedRemainingPercent?: number | null,
+) {
   const { themeAppearance, themeVariables } = useAppearancePreferences();
-  const tone = statusLineGaugeTone(percent, kind);
+  const tone = statusLineGaugeTone(percent, kind, projectedRemainingPercent);
   return {
     color: {
       success: themeAppearance === "dark" ? "#34d399" : "#047857",
       warning: themeVariables["--color-warning-foreground"],
-      error: themeVariables["--color-danger-foreground"],
+      error:
+        kind === "context"
+          ? themeAppearance === "dark"
+            ? "#f87171"
+            : "#b91c1c"
+          : themeVariables["--color-danger-foreground"],
     }[tone],
     alarm: tone === "error",
     foreground: themeVariables["--color-foreground"],
@@ -42,13 +52,18 @@ function useGaugeColor(percent: number, kind: GaugeKind) {
 function Dial(props: {
   readonly percent: number;
   readonly kind: GaugeKind;
+  readonly projectedRemainingPercent?: number | null;
   readonly label: string;
   readonly caption?: string | undefined;
   readonly detail?: ReactNode;
   readonly dimmed?: boolean;
 }) {
   const percent = statusLineGaugePercent(props.percent);
-  const { color, alarm, foreground } = useGaugeColor(percent, props.kind);
+  const { color, alarm, foreground } = useGaugeColor(
+    percent,
+    props.kind,
+    props.projectedRemainingPercent,
+  );
   return (
     <View
       accessible
@@ -83,6 +98,20 @@ function Dial(props: {
             originY={13}
           />
         ) : null}
+        {props.projectedRemainingPercent == null ? null : (
+          <Line
+            x1={13}
+            y1={1}
+            x2={13}
+            y2={6}
+            stroke={foreground}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            rotation={statusLineGaugeTickRotation(props.projectedRemainingPercent)}
+            originX={13}
+            originY={13}
+          />
+        )}
         <SvgText
           x={13}
           y={13}
@@ -141,12 +170,17 @@ function LimitDial(props: {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
   const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
-  const { title } = props;
-  const percent = props.limit.usedPercent;
+  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const remainingLabel = gt("{percent}% remaining", { percent: remainingPercent });
+  const projectedLabel =
+    projectedRemainingPercent === null
+      ? null
+      : gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent });
   return (
     <Dial
-      percent={percent}
+      percent={remainingPercent}
       kind="limit"
+      projectedRemainingPercent={projectedRemainingPercent}
       caption={props.caption}
       detail={
         props.caption && remaining !== null ? (
@@ -161,11 +195,7 @@ function LimitDial(props: {
         ) : null
       }
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
-      label={
-        note === null
-          ? gt("{title} {percent}% used", { title, percent })
-          : gt("{title} {percent}% used, {note}", { title, percent, note })
-      }
+      label={[props.title, remainingLabel, note, projectedLabel].filter(Boolean).join(", ")}
     />
   );
 }
@@ -302,8 +332,14 @@ export function ThreadStatusDialStrip(props: {
   );
 }
 
-function Meter(props: { readonly percent: number; readonly kind: GaugeKind }) {
-  const { color } = useGaugeColor(props.percent, props.kind);
+interface MeterValue {
+  readonly percent: number;
+  readonly kind: GaugeKind;
+  readonly projectedRemainingPercent?: number | null;
+}
+
+function Meter(props: MeterValue) {
+  const { color } = useGaugeColor(props.percent, props.kind, props.projectedRemainingPercent);
   return (
     <View className="mt-1 h-1 overflow-hidden rounded-full">
       <View className="absolute inset-0" style={{ backgroundColor: color, opacity: 0.2 }} />
@@ -317,7 +353,7 @@ function Meter(props: { readonly percent: number; readonly kind: GaugeKind }) {
 
 function Fact(props: {
   readonly name: string;
-  readonly meter?: { readonly percent: number; readonly kind: GaugeKind };
+  readonly meter?: MeterValue;
   readonly dimmed?: boolean;
   readonly children: ReactNode;
 }) {
@@ -340,14 +376,20 @@ function LimitFact(props: {
   readonly limit: StatusLineLimit;
   readonly nowMs: number;
 }) {
+  const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
+  const { remainingPercent, projectedRemainingPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: props.limit.usedPercent, kind: "limit" }}
+      meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
     >
-      {props.limit.usedPercent}%{note === null ? null : ` · ${note}`}
+      {gt("{percent}% remaining", { percent: remainingPercent })}
+      {note === null ? null : ` · ${note}`}
+      {projectedRemainingPercent === null
+        ? null
+        : ` · ${gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent })}`}
     </Fact>
   );
 }

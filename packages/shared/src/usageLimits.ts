@@ -474,6 +474,7 @@ export interface LimitPoolWindow {
   readonly remainingPercent: number;
   readonly usedPercent: number;
   readonly pace: LimitPace | null;
+  readonly projectedUsedPercent: number | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -696,6 +697,14 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
             ];
       })
       .sort((left, right) => left.at - right.at);
+    const nextReset = resets[0]?.at;
+    const forecasts =
+      nextReset === undefined
+        ? []
+        : members.flatMap((member) => {
+            const used = projectedWindowUsedPercent(member.window, now, nextReset);
+            return used === null ? [] : [used * weightOf.get(member)!];
+          });
     return {
       id,
       kind: first.kind,
@@ -707,6 +716,10 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
+      projectedUsedPercent:
+        forecasts.length === members.length
+          ? forecasts.reduce((sum, used) => sum + used, 0) / totalWeight
+          : null,
       resets,
     };
   });
@@ -739,6 +752,21 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
   const length = window.windowDurationMins * MINUTE;
   if (length <= 0) return null;
   return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+}
+
+export function projectedWindowUsedPercent(
+  window: ServerProviderUsageWindow,
+  now: number,
+  at?: number,
+): number | null {
+  const reset = resetMillis(window);
+  if (reset === null || reset <= now || (at !== undefined && at <= now)) return null;
+  const elapsed = elapsedShare(window, now);
+  if (elapsed === null || elapsed === 0) return null;
+  const projectedElapsed = at === undefined ? 1 : elapsedShare(window, at);
+  return projectedElapsed === null
+    ? null
+    : Math.min(100, (window.usedPercent * projectedElapsed) / elapsed);
 }
 
 // Bars show quota remaining, so even pace tracks time remaining.

@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import { ProviderDriverKind, ProviderInstanceId, UsageLimitSourceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -13,6 +14,7 @@ import {
   stampStatusLineInput,
   statusLineColorRole,
   statusLineModelName,
+  statusLineGaugeTone,
   reserveStatusLineText,
   splitStatusLineItems,
   type StatusLineInputSource,
@@ -394,6 +396,7 @@ describe("buildStatusLineInput", () => {
               label: "Session",
               usedPercent,
               resetsAt: reset,
+              windowDurationMins: 180,
             },
             { id: "seven_day", kind: "weekly" as const, label: "Weekly", usedPercent: 60 },
           ],
@@ -402,6 +405,7 @@ describe("buildStatusLineInput", () => {
     };
     const routed = {
       ...source,
+      nowMs: Date.parse(reset) - 60 * 60_000,
       providers: [{ ...provider, auth: { ...provider.auth, endpoint } }],
       usageLimitSources: [
         { ...hub, id: UsageLimitSourceId.make("other-proxy"), endpoint: origin + "/team-b" },
@@ -414,21 +418,34 @@ describe("buildStatusLineInput", () => {
         id: "five_hour",
         label: "Session",
         scope: [],
-        usedPercent: 50,
+        remainingPercent: 50,
+        projectedRemainingPercent: 28,
         resetsAtMs: Date.parse(reset),
       },
-      { id: "seven_day", label: "Weekly", scope: [], usedPercent: 60, resetsAtMs: null },
+      {
+        id: "seven_day",
+        label: "Weekly",
+        scope: [],
+        remainingPercent: 40,
+        projectedRemainingPercent: null,
+        resetsAtMs: null,
+      },
       {
         id: "weekly-fable",
         label: "Fable",
         scope: ["claude-fable-5-2"],
-        usedPercent: 90,
+        remainingPercent: 10,
+        projectedRemainingPercent: null,
         resetsAtMs: null,
       },
     ]);
     expect(buildStatusLineStats(routed)).toMatchObject({
-      fiveHour: { usedPercent: 50, resetsAtMs: Date.parse(reset) },
-      weekly: { usedPercent: 60, resetsAtMs: null },
+      fiveHour: {
+        remainingPercent: 50,
+        projectedRemainingPercent: 28,
+        resetsAtMs: Date.parse(reset),
+      },
+      weekly: { remainingPercent: 40, resetsAtMs: null },
     });
     expect(buildStatusLineInput(routed).rate_limits).toEqual({
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
@@ -436,10 +453,38 @@ describe("buildStatusLineInput", () => {
     });
     expect(
       buildStatusLineStats({ ...source, usageLimitSources: routed.usageLimitSources }).weekly,
-    ).toMatchObject({ usedPercent: 43 });
+    ).toMatchObject({ remainingPercent: 57 });
     expect(
       buildStatusLineStats({ ...routed, usageLimitSources: [routed.usageLimitSources[0]!] }).weekly,
-    ).toMatchObject({ usedPercent: 43 });
+    ).toMatchObject({ remainingPercent: 57 });
+    const staggered = hub.accounts.map((account, index) => ({
+      ...account,
+      usageLimits: {
+        ...account.usageLimits,
+        windows: account.usageLimits.windows.map((window) =>
+          window.kind === "session"
+            ? {
+                ...window,
+                usedPercent: 30,
+                resetsAt: DateTime.formatIso(
+                  DateTime.makeUnsafe(Date.parse(reset) + index * 45 * 60_000),
+                ),
+              }
+            : window,
+        ),
+      },
+    }));
+    expect(
+      buildStatusLineStats({
+        ...routed,
+        nowMs: Date.parse(reset) - 90 * 60_000,
+        usageLimitSources: [{ ...hub, accounts: staggered }],
+      }).fiveHour,
+    ).toEqual({
+      remainingPercent: 70,
+      projectedRemainingPercent: 25,
+      resetsAtMs: Date.parse(reset),
+    });
     const accountsAfterReset = hub.accounts.map((account, index) => ({
       ...account,
       usageLimits: {
@@ -456,7 +501,11 @@ describe("buildStatusLineInput", () => {
         ...routed,
         usageLimitSources: [{ ...hub, accounts: accountsAfterReset }],
       }).fiveHour,
-    ).toEqual({ usedPercent: 70, resetsAtMs: Date.parse(reset) });
+    ).toEqual({
+      remainingPercent: 30,
+      projectedRemainingPercent: 0,
+      resetsAtMs: Date.parse(reset),
+    });
 
     const weeklyOnly = hub.accounts.map((account) => ({
       ...account,
@@ -471,8 +520,8 @@ describe("buildStatusLineInput", () => {
         usageLimitSources: [{ ...hub, accounts: weeklyOnly }],
       }),
     ).toMatchObject({
-      fiveHour: { usedPercent: 47, resetsAtMs: Date.parse(reset) },
-      weekly: { usedPercent: 60, resetsAtMs: null },
+      fiveHour: { remainingPercent: 53, resetsAtMs: Date.parse(reset) },
+      weekly: { remainingPercent: 40, resetsAtMs: null },
     });
   });
 
@@ -511,8 +560,8 @@ describe("buildStatusLineInput", () => {
 
     const associated = withAdapter(providerRoute, providerRoute);
     expect(buildStatusLineStats(associated)).toMatchObject({
-      fiveHour: { usedPercent: 47, resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z") },
-      weekly: { usedPercent: 43, resetsAtMs: null },
+      fiveHour: { remainingPercent: 53, resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z") },
+      weekly: { remainingPercent: 57, resetsAtMs: null },
     });
     expect(buildStatusLineInput(associated).rate_limits).toMatchObject({
       five_hour: { used_percentage: 47 },
@@ -550,7 +599,7 @@ describe("buildStatusLineInput", () => {
           },
         ],
       }).weekly,
-    ).toEqual({ usedPercent: 43, resetsAtMs: null });
+    ).toEqual({ remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null });
   });
 
   it("lists every enabled provider's models and keeps their limits separate", () => {
@@ -574,6 +623,44 @@ describe("buildStatusLineInput", () => {
     ]);
   });
 
+  it.each([
+    [0, 150, 100, 100, "success"],
+    [25.1, 150, 75, 50, "warning"],
+    [30, 225, 70, 0, "error"],
+    [44, 300, 56, null, "success"],
+    [55, 0, 45, null, "warning"],
+  ] as const)(
+    "uses %s%% spent with %s minutes to reset for the remaining dial and its color",
+    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent, tone) => {
+      const provider = source.providers[0]!;
+      const stats = buildStatusLineStats({
+        ...source,
+        providers: [
+          {
+            ...provider,
+            usageLimits: {
+              checkedAt: provider.checkedAt,
+              windows: [
+                {
+                  id: "session",
+                  kind: "session",
+                  label: "5h",
+                  usedPercent,
+                  windowDurationMins: 300,
+                  resetsAt: DateTime.formatIso(
+                    DateTime.makeUnsafe(source.nowMs + minutesToReset * 60_000),
+                  ),
+                },
+              ],
+            },
+          },
+        ],
+      });
+      expect(stats.fiveHour).toMatchObject({ remainingPercent, projectedRemainingPercent });
+      expect(statusLineGaugeTone(remainingPercent, "limit", projectedRemainingPercent)).toBe(tone);
+    },
+  );
+
   it("gives a client the same facts to draw itself", () => {
     expect(buildStatusLineStats(source)).toEqual({
       modelName: "Opus 5.5",
@@ -584,8 +671,12 @@ describe("buildStatusLineInput", () => {
       contextPercent: 34,
       contextTokens: 341_000,
       contextMaxTokens: 1_000_000,
-      fiveHour: { usedPercent: 47, resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z") },
-      weekly: { usedPercent: 43, resetsAtMs: null },
+      fiveHour: {
+        remainingPercent: 53,
+        projectedRemainingPercent: null,
+        resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z"),
+      },
+      weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
       cachePercent: 99,
       inputTokens: 338_000,
       outputTokens: 21_400,
