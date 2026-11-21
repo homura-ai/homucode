@@ -2815,12 +2815,16 @@ it.effect("marks the model switch on a promoted message that restarts the turn",
 );
 
 // Send now still sends the message the user picked; only Steer now waits behind Stop.
-it.effect.each([undefined, true] as const)(
-  "promoting into a run that Stop reached with interrupt %s",
-  (interrupt) =>
+it.effect.each([
+  { interrupt: undefined, settled: false },
+  { interrupt: true, settled: false },
+  { interrupt: true, settled: true },
+] as const)(
+  "promoting into a run that Stop reached (interrupt $interrupt, stop settled $settled)",
+  ({ interrupt, settled }) =>
     Effect.gen(function* () {
       const { started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
-        `steering-after-stop-${interrupt}`,
+        `steering-after-stop-${interrupt}-${settled}`,
       );
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2850,7 +2854,34 @@ it.effect.each([undefined, true] as const)(
           runId: first.runId,
           holdQueue: true,
         });
+        if (settled) {
+          const ended = yield* orchestrator.streamDomainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "run.updated" &&
+                event.payload.id === first.runId &&
+                event.payload.status === "interrupted",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* worker.drain();
+          yield* Fiber.join(ended);
+          yield* worker.drain();
+        }
 
+        const queuedStarts = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "run.updated" &&
+              event.payload.id === queuedRun.id &&
+              event.payload.status === "starting",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
         const promoted = yield* orchestrator
           .dispatch({
             type: "queued-message.promote-to-steer",
@@ -2867,8 +2898,11 @@ it.effect.each([undefined, true] as const)(
         assert.equal(promoted._tag, interrupt ? "Success" : "Failure");
         assert.deepEqual(steered, []);
         const queued = projection.runs.find((run) => run.id === queuedRun.id);
-        if (interrupt) {
-          assert.notEqual(queued?.queueHeld, true);
+        if (settled) {
+          // No run end is left to start it, so Send now must have started it itself.
+          assert.equal(queued?.status, "starting");
+        } else if (interrupt) {
+          yield* Fiber.join(queuedStarts);
         } else {
           assert.equal(queued?.status, "queued");
           assert.isTrue(queued?.queueHeld);

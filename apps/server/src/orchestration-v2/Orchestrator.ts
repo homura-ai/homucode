@@ -17356,12 +17356,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (
       command.type === "queue.resume" ||
       command.type === "queued-run.start" ||
+      // Send now that reached a run already stopped has no run end left to start its message.
+      (command.type === "queued-message.promote-to-steer" && command.interrupt === true) ||
       (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined)
     ) {
       yield* mapDispatchError(command)(
         startNextQueuedRun(command.threadId, {
           userStarted: command.type !== "thread.runtime-mode.set",
-          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+          ...(command.type === "queued-run.start"
+            ? { queuedRunId: command.runId }
+            : command.type === "queued-message.promote-to-steer"
+              ? { queuedRunId: command.queuedRunId }
+              : {}),
         }),
       );
     }
