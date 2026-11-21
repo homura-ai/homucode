@@ -32,6 +32,7 @@ export interface StatusLineInputSource {
   readonly contextWindow: ContextWindowSnapshot | null;
   /** Usage limits are read as of this time. */
   readonly nowMs: number;
+  readonly showSessionDepletionRatio?: boolean;
   readonly showWeeklyDepletionRatio?: boolean;
   readonly accounting?: StatusLineAccounting | null;
   readonly useApiPrice?: boolean;
@@ -376,7 +377,7 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
       context === null || context.usedPercentage === null ? null : context.usedPercentage,
     contextTokens: context?.usedTokens ?? null,
     contextMaxTokens: context?.maxTokens ?? null,
-    fiveHour: statusLineLimit(windows, "session", source.nowMs),
+    fiveHour: statusLineLimit(windows, "session", source.nowMs, source.showSessionDepletionRatio),
     weekly: statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null

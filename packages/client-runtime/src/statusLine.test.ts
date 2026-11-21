@@ -677,10 +677,10 @@ describe("buildStatusLineInput", () => {
     [0, 100, 0],
     [100, -100, undefined],
   ] as const)(
-    "reports a weekly depletion ratio for %s%% spent when enabled",
+    "reports independent depletion ratios for %s%% spent when enabled",
     (usedPercent, projected, ratio) => {
       const provider = source.providers[0]!;
-      const weeklySource = {
+      const ratioSource = {
         ...source,
         providers: [
           {
@@ -688,6 +688,14 @@ describe("buildStatusLineInput", () => {
             usageLimits: {
               checkedAt: provider.checkedAt,
               windows: [
+                {
+                  id: "session",
+                  kind: "session" as const,
+                  label: "5h",
+                  usedPercent,
+                  windowDurationMins: 300,
+                  resetsAt: DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 150 * 60_000)),
+                },
                 {
                   id: "weekly",
                   kind: "weekly" as const,
@@ -701,13 +709,25 @@ describe("buildStatusLineInput", () => {
           },
         ],
       };
-      expect(buildStatusLineStats(weeklySource).weekly?.depletionRatioPercent).toBeUndefined();
-      const weekly = buildStatusLineStats({
-        ...weeklySource,
+      const defaults = buildStatusLineStats(ratioSource);
+      expect(defaults.fiveHour?.depletionRatioPercent).toBeUndefined();
+      expect(defaults.weekly?.depletionRatioPercent).toBeUndefined();
+
+      const sessionOnly = buildStatusLineStats({
+        ...ratioSource,
+        showSessionDepletionRatio: true,
+      });
+      expect(sessionOnly.fiveHour?.projectedRemainingPercent).toBe(projected);
+      expect(sessionOnly.fiveHour?.depletionRatioPercent).toBe(ratio);
+      expect(sessionOnly.weekly?.depletionRatioPercent).toBeUndefined();
+
+      const weeklyOnly = buildStatusLineStats({
+        ...ratioSource,
         showWeeklyDepletionRatio: true,
-      }).weekly;
-      expect(weekly?.projectedRemainingPercent).toBe(projected);
-      expect(weekly?.depletionRatioPercent).toBe(ratio);
+      });
+      expect(weeklyOnly.weekly?.projectedRemainingPercent).toBe(projected);
+      expect(weeklyOnly.weekly?.depletionRatioPercent).toBe(ratio);
+      expect(weeklyOnly.fiveHour?.depletionRatioPercent).toBeUndefined();
     },
   );
 

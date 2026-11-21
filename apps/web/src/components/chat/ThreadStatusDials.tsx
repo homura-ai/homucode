@@ -24,7 +24,8 @@ import {
   TimerIcon,
   ClockIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { observeResize } from "~/lib/observeResize";
 import type { MessageResolver } from "../../i18n/messages";
 
 import { APP_VERSION } from "../../branding";
@@ -108,14 +109,14 @@ function Dial(props: {
   readonly name: ReactNode;
   readonly detail: ReactNode;
   readonly label: string;
-  readonly className?: string;
+  readonly dimmed?: boolean;
 }) {
   const percent = statusLineGaugePercent(props.percent);
   return (
     <span
       role="img"
       aria-label={props.label}
-      className={`flex shrink-0 items-center gap-1.5 ${props.className ?? ""}`}
+      className={`flex shrink-0 items-center gap-1.5 ${props.dimmed ? "opacity-50" : ""}`}
       style={{ color: gaugeColor(props.percent, props.kind, props.projectedRemainingPercent) }}
     >
       <Ring
@@ -144,7 +145,6 @@ function LimitDial(props: {
   readonly nowMs: number;
   readonly name: ReactNode;
   readonly title: string;
-  readonly className: string;
 }) {
   const gt = useGT();
   const left = statusLineLimitRemaining(props.limit, props.nowMs);
@@ -164,7 +164,14 @@ function LimitDial(props: {
       percent={remainingPercent}
       kind="limit"
       projectedRemainingPercent={projectedRemainingPercent}
-      name={props.name}
+      name={
+        <>
+          {props.name}
+          {left !== null && depletionRatioPercent !== undefined ? (
+            <span className="ms-1 text-3xs text-muted-foreground">{depletionRatioPercent}%</span>
+          ) : null}
+        </>
+      }
       detail={
         left === null ? null : (
           <>
@@ -172,14 +179,11 @@ function LimitDial(props: {
             <span style={{ color: statusUsedColor(statusLineBurnRisk(props.limit, props.nowMs)) }}>
               {left}
             </span>
-            {depletionRatioPercent === undefined ? null : (
-              <span className="ms-0.5 border-s ps-1">{depletionRatioPercent}%</span>
-            )}
           </>
         )
       }
       label={[props.title, remaining, note, projected, depletionRatio].filter(Boolean).join(", ")}
-      className={`${props.className} ${statusLineLimitEnded(props.limit, props.nowMs) ? "opacity-50" : ""}`}
+      dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
     />
   );
 }
@@ -209,6 +213,44 @@ function CompactLabel(props: { readonly label: string; readonly short: string })
   );
 }
 
+function useStatusDialVisibility(hasContext: boolean, hasWeekly: boolean, hasFiveHour: boolean) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const contextRef = useRef<HTMLSpanElement>(null);
+  const weeklyRef = useRef<HTMLSpanElement>(null);
+  const fiveHourRef = useRef<HTMLSpanElement>(null);
+  const [visibility, setVisibility] = useState({ weekly: true, fiveHour: true });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures rendered dial widths to keep weekly ahead of the 5-hour dial
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (row === null) return;
+    const context = hasContext ? contextRef.current : null;
+    const { current: weekly } = weeklyRef;
+    const { current: fiveHour } = fiveHourRef;
+    const measure = () => {
+      const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+      const width = (element: HTMLSpanElement | null) =>
+        element === null ? 0 : element.getBoundingClientRect().width + gap;
+      const room = row.getBoundingClientRect().width + gap - width(context);
+      const weeklyWidth = width(weekly);
+      const showWeekly = hasWeekly && weeklyWidth <= room;
+      const showFiveHour = hasFiveHour && width(fiveHour) <= room - (showWeekly ? weeklyWidth : 0);
+      setVisibility((previous) =>
+        previous.weekly === showWeekly && previous.fiveHour === showFiveHour
+          ? previous
+          : { weekly: showWeekly, fiveHour: showFiveHour },
+      );
+    };
+    measure();
+    const stop = [row, context, weekly, fiveHour]
+      .filter((element) => element !== null)
+      .map((element) => observeResize(element, measure));
+    return () => stop.forEach((unobserve) => unobserve());
+  }, [hasContext, hasWeekly, hasFiveHour]);
+  return { rowRef, contextRef, weeklyRef, fiveHourRef, visibility };
+}
+
+const HIDDEN_DIAL = "invisible pointer-events-none absolute left-0 top-0 w-max";
+
 export function StatusDialStrip(props: {
   readonly stats: StatusLineStats;
   readonly createdAt: string | null;
@@ -218,6 +260,11 @@ export function StatusDialStrip(props: {
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
+  const { rowRef, contextRef, weeklyRef, fiveHourRef, visibility } = useStatusDialVisibility(
+    context !== null,
+    stats.weekly !== null,
+    stats.fiveHour !== null,
+  );
   const contextName = (
     <CompactLabel
       label={gt("context", { $context: "model context window" })}
@@ -229,46 +276,50 @@ export function StatusDialStrip(props: {
     stats.fastMode === null ? null : stats.fastMode ? gt("Fast mode on") : gt("Fast mode off");
   return (
     <div className="@container/dials">
-      <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap tabular-nums">
-        {context === null ? null : stats.contextPercent === null ? (
-          <Stat label={gt("Context {context} tokens", { context })} className="">
-            {contextName}
-            {context}
-          </Stat>
-        ) : (
-          <Dial
-            percent={stats.contextPercent}
-            kind="context"
-            name={contextName}
-            detail={context}
-            label={gt("Context {percent}% used, {context} tokens", {
-              percent: statusLineGaugePercent(stats.contextPercent),
-              context,
-            })}
-          />
+      <div
+        ref={rowRef}
+        className="relative flex items-center gap-2 overflow-hidden whitespace-nowrap tabular-nums"
+      >
+        {context === null ? null : (
+          <span ref={contextRef} className="shrink-0">
+            {stats.contextPercent === null ? (
+              <Stat label={gt("Context {context} tokens", { context })} className="">
+                {contextName}
+                {context}
+              </Stat>
+            ) : (
+              <Dial
+                percent={stats.contextPercent}
+                kind="context"
+                name={contextName}
+                detail={context}
+                label={gt("Context {percent}% used, {context} tokens", {
+                  percent: statusLineGaugePercent(stats.contextPercent),
+                  context,
+                })}
+              />
+            )}
+          </span>
         )}
         {stats.fiveHour === null ? null : (
-          <LimitDial
-            limit={stats.fiveHour}
-            nowMs={nowMs}
-            name="5h"
-            title={gt("5-hour limit")}
-            className="@max-[10rem]/dials:hidden"
-          />
+          <span ref={fiveHourRef} className={visibility.fiveHour ? "shrink-0" : HIDDEN_DIAL}>
+            <LimitDial limit={stats.fiveHour} nowMs={nowMs} name="5h" title={gt("5-hour limit")} />
+          </span>
         )}
         {stats.weekly === null ? null : (
-          <LimitDial
-            limit={stats.weekly}
-            nowMs={nowMs}
-            name={
-              <CompactLabel
-                label={gt("week", { $context: "weekly usage limit" })}
-                short={gt("wk", { $context: "short label for weekly usage" })}
-              />
-            }
-            title={gt("Weekly limit")}
-            className="@max-[6.5rem]/dials:hidden"
-          />
+          <span ref={weeklyRef} className={visibility.weekly ? "shrink-0" : HIDDEN_DIAL}>
+            <LimitDial
+              limit={stats.weekly}
+              nowMs={nowMs}
+              name={
+                <CompactLabel
+                  label={gt("week", { $context: "weekly usage limit" })}
+                  short={gt("wk", { $context: "short label for weekly usage" })}
+                />
+              }
+              title={gt("Weekly limit")}
+            />
+          </span>
         )}
         {cost === null ? null : (
           <Stat

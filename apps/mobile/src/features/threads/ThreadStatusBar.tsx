@@ -40,6 +40,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { StatusLineBurnTauControl } from "../settings/components/StatusLineBurnTauControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
+import { DEFAULT_BASE_FONT_SIZE } from "../../lib/appearancePreferences";
 import { useNowMinuteMs } from "../../lib/clock";
 import type { MobileThemeVariables } from "../../lib/mobileTheme";
 
@@ -172,7 +173,9 @@ export function ThreadStatusBar(
   },
 ) {
   const gt = useGT();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale: systemFontScale } = useWindowDimensions();
+  const { appearance } = useAppearancePreferences();
+  const fontScale = (systemFontScale * appearance.baseFontSize) / DEFAULT_BASE_FONT_SIZE;
   const [paneWidth, setPaneWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
@@ -203,6 +206,7 @@ export function ThreadStatusBar(
     nowMs,
     accounting,
     useApiPrice: config?.settings.statusLineUseApiPrice === true,
+    showSessionDepletionRatio: config?.settings.statusLineShowSessionDepletionRatio === true,
     showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,
   };
   const command = useStatusLineCommand(props, source, custom);
@@ -213,8 +217,9 @@ export function ThreadStatusBar(
   const minimumWidth = stats === null ? 200 : minimumStatusDialWidth(stats, fontScale);
   const titleRoom = 120 * fontScale + 20;
   const inlineRoom = paneWidth - props.controlsWidth - titleRoom;
-  const inline = inlineRoom >= minimumWidth;
-  const availableWidth = inline ? inlineRoom : paneWidth - 56;
+  const chevronRoom = 16;
+  const inline = inlineRoom >= minimumWidth + chevronRoom;
+  const availableWidth = Math.max(0, (inline ? inlineRoom : paneWidth - 56) - chevronRoom);
   const canExpand = stats !== null || firstLine !== undefined;
   const barOverlap = useBarOverlap();
   const setBarInsetConsumed = useContext(SetThreadBarInsetConsumed);
@@ -236,7 +241,7 @@ export function ThreadStatusBar(
         className={`min-w-0 flex-row items-center gap-1.5 ${
           inline ? "min-h-10" : "min-h-9 max-w-full self-start rounded-full bg-subtle px-3"
         }`}
-        style={inline ? { maxWidth: stats === null ? 200 : availableWidth } : undefined}
+        style={inline ? { maxWidth: stats === null ? 200 : inlineRoom } : undefined}
       >
         {stats !== null ? (
           <StatusLineTypography>

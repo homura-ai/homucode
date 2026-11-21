@@ -939,6 +939,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["statusline hover focus quota usage extra features"],
   },
   {
+    id: "status-line-session-depletion-ratio",
+    title: msg("5-hour depletion ratio"),
+    to: "/settings/agent-behavior",
+    scope: "environment-defaults",
+    searchTerms: ["statusline 5h five hour session quota reset projected pace"],
+  },
+  {
     id: "status-line-weekly-depletion-ratio",
     title: msg("Weekly depletion ratio"),
     to: "/settings/agent-behavior",

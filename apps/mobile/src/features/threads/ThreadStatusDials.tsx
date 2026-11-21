@@ -1,6 +1,5 @@
 import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import {
-  fitStatusLineItems,
   formatStatusLineTokens,
   STATUS_LINE_EFFORT_COLORS,
   statusLineBurnRisk,
@@ -24,6 +23,7 @@ import { View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 
 import { StatusLineInterLoaded, StatusLineText as Text } from "./StatusLineTypography";
+import { fitMobileStatusDials, mobileStatusLineModelLabels } from "./thread-status-dial-layout";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
@@ -221,7 +221,11 @@ function LimitDial(props: {
       percent={remainingPercent}
       kind="limit"
       projectedRemainingPercent={projectedRemainingPercent}
-      caption={props.caption}
+      caption={
+        props.showDepletionRatio && depletionRatioPercent !== undefined
+          ? `${props.caption} ${depletionRatioPercent}%`
+          : props.caption
+      }
       detail={
         props.caption && remaining !== null ? (
           <View className="flex-row items-center gap-0.5">
@@ -231,11 +235,6 @@ function LimitDial(props: {
               tintColorClassName="accent-foreground-muted"
             />
             <StripValue color={resetColor}>{remaining}</StripValue>
-            {props.showDepletionRatio && depletionRatioPercent !== undefined ? (
-              <View className="ms-0.5 border-s border-border ps-1">
-                <StripValue>{depletionRatioPercent}%</StripValue>
-              </View>
-            ) : null}
           </View>
         ) : null
       }
@@ -248,21 +247,30 @@ function LimitDial(props: {
 }
 
 function estimateTextWidth(text: string, fontScale: number): number {
-  return (text.length * 5.5 + 3) * fontScale;
+  return (text.length * 6.5 + 3) * fontScale;
 }
 
-export function minimumStatusDialWidth(stats: StatusLineStats, fontScale: number): number {
+function contextDialWidth(stats: StatusLineStats, fontScale: number): number {
   return (
     24 +
     (stats.contextPercent === null ? 0 : 30) +
     (stats.contextTokens === null
       ? 0
-      : estimateTextWidth(formatStatusLineTokens(stats.contextTokens), fontScale)) +
-    (stats.modelName === null
-      ? 0
-      : Math.min(90, estimateTextWidth(stats.modelName, fontScale)) +
-        (stats.effort === null ? 0 : estimateTextWidth(effortLabel(stats.effort), fontScale)) +
-        10)
+      : estimateTextWidth(formatStatusLineTokens(stats.contextTokens), fontScale))
+  );
+}
+
+function modelLabelWidth(label: string, fontScale: number, truncate: boolean): number {
+  const width = estimateTextWidth(label, fontScale);
+  return (truncate ? Math.min(96, width) : width) + 8;
+}
+
+export function minimumStatusDialWidth(stats: StatusLineStats, fontScale: number): number {
+  const { labels, truncate } = mobileStatusLineModelLabels(stats.modelName);
+  const minimumModel = labels.at(-1);
+  return (
+    contextDialWidth(stats, fontScale) +
+    (minimumModel === undefined ? 0 : modelLabelWidth(minimumModel, fontScale, truncate))
   );
 }
 
@@ -298,7 +306,9 @@ export function ThreadStatusDialStrip(props: {
   const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
   const cost =
     stats.cost === null ? null : `${stats.cost.amount}${stats.cost.basis === "api" ? " API" : ""}`;
-  const weeklyRatio = stats.weekly?.depletionRatioPercent;
+  const model = mobileStatusLineModelLabels(stats.modelName);
+  const effort =
+    stats.modelName === null || stats.effort === null ? null : effortLabel(stats.effort);
   const fast =
     stats.fastMode === null
       ? null
@@ -312,36 +322,46 @@ export function ThreadStatusDialStrip(props: {
     value === null ? [] : [{ id, full: textWidth(value) + iconWidth + 8 }];
   const limitWidth = (limit: StatusLineLimit, caption: string) => {
     const countdown = statusLineLimitRemaining(limit, nowMs);
-    return 38 + Math.max(textWidth(caption), countdown === null ? 0 : 12 + textWidth(countdown));
+    const content = Math.max(
+      textWidth(caption),
+      countdown === null ? 0 : 12 + textWidth(countdown),
+    );
+    return {
+      width: 38 + content,
+      ratioWidth:
+        countdown === null || limit.depletionRatioPercent === undefined
+          ? null
+          : Math.max(0, textWidth(`${caption} ${limit.depletionRatioPercent}%`) - content),
+    };
   };
-  const core = minimumStatusDialWidth(stats, fontScale);
+  const contextWidth = contextDialWidth(stats, fontScale);
   const captionWidth = (caption: string) =>
     context === null
       ? 0
       : stats.contextPercent === null
         ? textWidth(caption)
         : Math.max(0, textWidth(caption) - textWidth(context));
-  const { compact, visible } = fitStatusLineItems(
+  const layout = fitMobileStatusDials({
     availableWidth,
-    {
-      full: core + captionWidth(contextLabel),
-      compact: core + captionWidth(compactContextLabel),
+    context: {
+      full: contextWidth + captionWidth(contextLabel),
+      compact: contextWidth + captionWidth(compactContextLabel),
     },
-    [
-      ...(stats.weekly === null
-        ? []
-        : ([
-            {
-              id: "weekly",
-              full: limitWidth(stats.weekly, weeklyLabel),
-              compact: limitWidth(stats.weekly, compactWeeklyLabel),
-            },
-          ] as const)),
-      ...(stats.fiveHour === null
-        ? []
-        : ([{ id: "fiveHour", full: limitWidth(stats.fiveHour, "5h") }] as const)),
+    modelNames: model.labels.map((name) => ({
+      name,
+      width: modelLabelWidth(name, fontScale, model.truncate),
+    })),
+    effortWidth: effort === null ? null : textWidth(effort) + 4,
+    weekly:
+      stats.weekly === null
+        ? null
+        : {
+            full: limitWidth(stats.weekly, weeklyLabel),
+            compact: limitWidth(stats.weekly, compactWeeklyLabel),
+          },
+    fiveHour: stats.fiveHour === null ? null : limitWidth(stats.fiveHour, "5h"),
+    extras: [
       ...item("cost", cost),
-      ...item("weeklyRatio", weeklyRatio === undefined ? null : `${weeklyRatio}%`),
       ...item("uptime", uptime, 16),
       ...item("cache", stats.cachePercent === null ? null : "100%", 16),
       ...(stats.inputTokens === null && stats.outputTokens === null
@@ -358,24 +378,27 @@ export function ThreadStatusDialStrip(props: {
       ...item("appVersion", appVersion),
       ...item("providerVersion", stats.version),
     ],
-  );
-  const showDepletionRatio = visible.has("weeklyRatio");
+  });
+  const { compact, visible } = layout;
   const contextCaption = compact ? compactContextLabel : contextLabel;
   return (
-    <View className="min-w-0 shrink flex-row items-center gap-2">
-      {stats.modelName === null ? null : (
-        <View className="min-w-0 shrink flex-row items-center gap-1">
+    <View
+      className={`min-w-0 shrink flex-row items-center gap-2 ${layout.wrapCore ? "flex-wrap" : ""}`}
+      style={layout.wrapCore ? { maxWidth: availableWidth } : undefined}
+    >
+      {layout.modelName === null ? null : (
+        <View className="shrink-0 flex-row items-center gap-1">
           <Text
             medium
             numberOfLines={1}
-            className="max-w-24 shrink text-xs font-medium"
+            className={model.truncate ? "max-w-24 text-xs font-medium" : "text-xs font-medium"}
             style={effortStyle}
           >
-            {stats.modelName}
+            {layout.modelName}
           </Text>
-          {stats.effort === null ? null : (
+          {!layout.effort || effort === null ? null : (
             <Text numberOfLines={1} className="text-2xs" style={effortStyle}>
-              {effortLabel(stats.effort)}
+              {effort}
             </Text>
           )}
         </View>
@@ -396,15 +419,21 @@ export function ThreadStatusDialStrip(props: {
           {contextCaption} {context}
         </Text>
       )}
-      {stats.fiveHour === null || !visible.has("fiveHour") ? null : (
-        <LimitDial limit={stats.fiveHour} nowMs={nowMs} title={gt("5-hour limit")} caption="5h" />
+      {stats.fiveHour === null || !layout.fiveHour ? null : (
+        <LimitDial
+          limit={stats.fiveHour}
+          nowMs={nowMs}
+          title={gt("5-hour limit")}
+          caption="5h"
+          showDepletionRatio={layout.fiveHourRatio}
+        />
       )}
-      {stats.weekly === null || !visible.has("weekly") ? null : (
+      {stats.weekly === null || !layout.weekly ? null : (
         <LimitDial
           limit={stats.weekly}
           nowMs={nowMs}
           title={gt("Weekly limit")}
-          showDepletionRatio={showDepletionRatio}
+          showDepletionRatio={layout.weeklyRatio}
           caption={compact ? compactWeeklyLabel : weeklyLabel}
         />
       )}

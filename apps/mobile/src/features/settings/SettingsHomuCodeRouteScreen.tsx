@@ -196,21 +196,28 @@ function HomuCodeServerSettings() {
           }
           onValueChange={(enabled) => write({ statusLineEnabled: enabled })}
         />
-        <SettingsSwitchRow
-          icon="timer"
-          label={gt("Weekly depletion ratio")}
-          subtitle={gt(
-            "Show the time until the weekly reset as a percentage of the time until quota is projected to run out.",
-          )}
-          value={uniformMobileSetting(targets, "statusLineShowWeeklyDepletionRatio")}
-          disabled={
-            !canWrite ||
-            pending ||
-            managedSettingReason(targets, ["statusLineShowWeeklyDepletionRatio"], resolve) !==
-              undefined
-          }
-          onValueChange={(enabled) => write({ statusLineShowWeeklyDepletionRatio: enabled })}
-        />
+        {(
+          [
+            ["statusLineShowSessionDepletionRatio", gt("5-hour depletion ratio")],
+            ["statusLineShowWeeklyDepletionRatio", gt("Weekly depletion ratio")],
+          ] as const
+        ).map(([setting, label]) => (
+          <SettingsSwitchRow
+            key={setting}
+            icon="timer"
+            label={label}
+            subtitle={gt(
+              "Show the time until reset as a percentage of the time until quota is projected to run out.",
+            )}
+            value={uniformMobileSetting(targets, setting)}
+            disabled={
+              !canWrite ||
+              pending ||
+              managedSettingReason(targets, [setting], resolve) !== undefined
+            }
+            onValueChange={(enabled) => write({ [setting]: enabled })}
+          />
+        ))}
         <SettingsSwitchRow
           label={gt("Use API prices for thread cost")}
           subtitle={gt("Use API list prices instead of estimating the subscription cost.")}
