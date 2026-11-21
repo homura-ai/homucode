@@ -11,7 +11,7 @@ interface AppBarTitleProps {
 
 export function AppBarTitle(props: AppBarTitleProps) {
   return (
-    <View className="min-w-0 flex-row items-center gap-2">
+    <View className="min-w-0 flex-row items-center gap-5">
       <View className="min-w-0 shrink">
         <AppText
           numberOfLines={1}

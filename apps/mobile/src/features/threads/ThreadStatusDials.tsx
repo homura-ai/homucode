@@ -1,3 +1,4 @@
+import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import {
   formatStatusLineTokens,
   statusLineEffortBars,
@@ -43,6 +44,7 @@ function Dial(props: {
   readonly kind: GaugeKind;
   readonly label: string;
   readonly caption?: string | undefined;
+  readonly detail?: ReactNode;
   readonly dimmed?: boolean;
 }) {
   const percent = statusLineGaugePercent(props.percent);
@@ -93,8 +95,15 @@ function Dial(props: {
           {percent}
         </SvgText>
       </Svg>
-      {props.caption === undefined ? null : (
-        <Text className="text-2xs font-medium">{props.caption}</Text>
+      {props.caption === undefined && props.detail == null ? null : (
+        <View>
+          {props.caption === undefined ? null : (
+            <Text numberOfLines={1} className="text-2xs font-medium">
+              {props.caption}
+            </Text>
+          )}
+          {props.detail}
+        </View>
       )}
     </View>
   );
@@ -131,6 +140,7 @@ function LimitDial(props: {
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
+  const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
   const { title } = props;
   const percent = props.limit.usedPercent;
   return (
@@ -138,6 +148,18 @@ function LimitDial(props: {
       percent={percent}
       kind="limit"
       caption={props.caption}
+      detail={
+        props.caption && remaining !== null ? (
+          <View className="flex-row items-center gap-0.5">
+            <SymbolView
+              name="arrow.clockwise"
+              size={10}
+              tintColorClassName="accent-foreground-muted"
+            />
+            <StripValue>{remaining}</StripValue>
+          </View>
+        ) : null
+      }
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
       label={
         note === null
@@ -148,20 +170,56 @@ function LimitDial(props: {
   );
 }
 
+export function minimumStatusDialWidth(stats: StatusLineStats, fontScale: number): number {
+  return (
+    24 +
+    (stats.contextPercent === null ? 0 : 34) +
+    (stats.fiveHour === null ? 0 : 34) +
+    (stats.weekly === null ? 0 : 34) +
+    ((stats.contextTokens === null ? 0 : 44) + (stats.modelName === null ? 0 : 102)) * fontScale
+  );
+}
+
+function StripValue(props: { readonly children: ReactNode }) {
+  return (
+    <Text
+      numberOfLines={1}
+      className="text-2xs text-foreground-muted"
+      style={{ fontVariant: ["tabular-nums"] }}
+    >
+      {props.children}
+    </Text>
+  );
+}
+
 export function ThreadStatusDialStrip(props: {
   readonly stats: StatusLineStats;
+  readonly createdAt: string | null;
   readonly nowMs: number;
-  readonly showCaptions: boolean;
+  readonly availableWidth: number;
+  readonly fontScale: number;
 }) {
   const gt = useGT();
-  const { stats, nowMs, showCaptions } = props;
+  const { themeVariables } = useAppearancePreferences();
+  const { stats, nowMs, availableWidth, fontScale } = props;
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
   const contextLabel = gt("Context", { $context: "model context window" });
+  const uptime = statusLineUptime(props.createdAt, nowMs);
+  const compactWidth = minimumStatusDialWidth(stats, fontScale);
+  const captionWidth =
+    compactWidth +
+    ((stats.fiveHour === null ? 0 : 38) + (stats.weekly === null ? 0 : 38)) * fontScale;
+  const showCaptions = availableWidth >= captionWidth;
+  const uptimeWidth = captionWidth + (uptime === null ? 0 : 60 * fontScale);
+  const cacheWidth = uptimeWidth + (stats.cachePercent === null ? 0 : 55 * fontScale);
+  const tokensWidth =
+    cacheWidth +
+    ((stats.inputTokens === null ? 0 : 48) + (stats.outputTokens === null ? 0 : 47)) * fontScale;
   return (
     <View className="min-w-0 shrink flex-row items-center gap-2">
       {stats.modelName === null ? null : (
         <View className="min-w-0 shrink flex-row items-center gap-1">
-          <Text numberOfLines={1} className="shrink text-xs font-medium">
+          <Text numberOfLines={1} className="max-w-24 shrink text-xs font-medium">
             {stats.modelName}
           </Text>
           {stats.effort === null ? null : <Effort effort={stats.effort} />}
@@ -179,6 +237,7 @@ export function ThreadStatusDialStrip(props: {
           percent={stats.contextPercent}
           kind="context"
           caption={showCaptions ? contextLabel : undefined}
+          detail={<StripValue>{context}</StripValue>}
           label={gt("Context {percent}% used, {context} tokens", {
             percent: stats.contextPercent,
             context,
@@ -204,6 +263,40 @@ export function ThreadStatusDialStrip(props: {
           title={gt("Weekly limit")}
           {...(showCaptions ? { caption: gt("week", { $context: "weekly usage limit" }) } : {})}
         />
+      )}
+      {uptime === null || availableWidth < uptimeWidth ? null : (
+        <View className="shrink-0 flex-row items-center gap-1">
+          <View className="mr-1 h-4 w-px bg-border" />
+          <SymbolView name="timer" size={12} tintColorClassName="accent-foreground-muted" />
+          <StripValue>{uptime}</StripValue>
+        </View>
+      )}
+      {stats.cachePercent === null || availableWidth < cacheWidth ? null : (
+        <View className="shrink-0 flex-row items-center gap-1">
+          <IconDatabase size={12} color={themeVariables["--color-foreground-muted"]} />
+          <StripValue>{stats.cachePercent}%</StripValue>
+        </View>
+      )}
+      {(stats.inputTokens === null && stats.outputTokens === null) ||
+      availableWidth < tokensWidth ? null : (
+        <View className="shrink-0 flex-row items-center gap-1">
+          {stats.inputTokens === null ? null : (
+            <>
+              <SymbolView
+                name="arrow.down"
+                size={12}
+                tintColorClassName="accent-foreground-muted"
+              />
+              <StripValue>{formatStatusLineTokens(stats.inputTokens)}</StripValue>
+            </>
+          )}
+          {stats.outputTokens === null ? null : (
+            <>
+              <SymbolView name="arrow.up" size={12} tintColorClassName="accent-foreground-muted" />
+              <StripValue>{formatStatusLineTokens(stats.outputTokens)}</StripValue>
+            </>
+          )}
+        </View>
       )}
     </View>
   );

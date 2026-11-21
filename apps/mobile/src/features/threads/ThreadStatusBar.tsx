@@ -9,7 +9,6 @@ import {
   stampStatusLineInput,
   type StatusLineColorRole,
   statusLineColorRole,
-  type StatusLineStats,
   type StatusLineInputSource,
 } from "@t3tools/client-runtime/status-line";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
@@ -30,7 +29,11 @@ import { useBarOverlap } from "../../components/ui/useBarInset";
 import { SetThreadBarInsetConsumed } from "./thread-status-bar-inset";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useThreadContextWindow } from "../../state/entities";
-import { ThreadStatusDialDetails, ThreadStatusDialStrip } from "./ThreadStatusDials";
+import {
+  minimumStatusDialWidth,
+  ThreadStatusDialDetails,
+  ThreadStatusDialStrip,
+} from "./ThreadStatusDials";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { serverEnvironment } from "../../state/server";
 import { useNowMinuteMs } from "../../lib/clock";
@@ -157,16 +160,6 @@ function useStatusLineCommand(
     : null;
 }
 
-// Reserve one line of title and room for the native navigation buttons and menus.
-function inlineWidth(stats: StatusLineStats | null, fontScale: number): number {
-  if (stats === null) return 200;
-  const dials =
-    (stats.contextTokens === null ? 0 : stats.contextPercent === null ? 48 : 34) +
-    (stats.fiveHour === null ? 0 : 34) +
-    (stats.weekly === null ? 0 : 34);
-  return 24 + dials + (stats.modelName === null ? 0 : 116 * fontScale);
-}
-
 export function ThreadStatusBar(
   props: ThreadStatusSource & {
     readonly controlsWidth: number;
@@ -190,8 +183,11 @@ export function ThreadStatusBar(
   const lines = command === null ? [] : parseAnsiLines(command.text);
   const firstLine = lines.find((line) => line.length > 0);
   const error = firstLine === undefined ? command?.error : null;
-  const width = inlineWidth(stats, fontScale);
-  const inline = paneWidth >= width + props.controlsWidth + 120 * fontScale;
+  const minimumWidth = stats === null ? 200 : minimumStatusDialWidth(stats, fontScale);
+  const titleRoom = 120 * fontScale + 20;
+  const inlineRoom = paneWidth - props.controlsWidth - titleRoom;
+  const inline = inlineRoom >= minimumWidth;
+  const availableWidth = inline ? inlineRoom : paneWidth - 56;
   const canExpand = stats !== null || firstLine !== undefined;
   const barOverlap = useBarOverlap();
   const setBarInsetConsumed = useContext(SetThreadBarInsetConsumed);
@@ -213,13 +209,15 @@ export function ThreadStatusBar(
         className={`min-w-0 flex-row items-center gap-1.5 ${
           inline ? "min-h-10" : "min-h-9 max-w-full self-start rounded-full bg-subtle px-3"
         }`}
-        style={inline ? { maxWidth: width } : undefined}
+        style={inline ? { maxWidth: stats === null ? 200 : availableWidth } : undefined}
       >
         {stats !== null ? (
           <ThreadStatusDialStrip
             stats={stats}
+            createdAt={props.createdAt}
             nowMs={nowMs}
-            showCaptions={!inline && paneWidth >= 360 * fontScale}
+            availableWidth={availableWidth}
+            fontScale={fontScale}
           />
         ) : firstLine !== undefined ? (
           <CommandLine line={firstLine} />
