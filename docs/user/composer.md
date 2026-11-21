@@ -163,10 +163,10 @@ use 3.2% for non-Fable models and 5.7% for Fable. Turn on **Use API prices for t
 to always see API prices. A ≥ means some turns could only be partially priced or had no
 pricing data. Claude also reports API time and output style on completed turns.
 
-Each quota dial and its reset countdown share a green-to-red color based on the recent
-smoothed burn rate. The color moves toward red as the time to exhaustion shrinks relative to
-the time until reset. Hover or focus the status line on desktop and web, or tap it on mobile,
-to see the details and change
+The projected remainder, depletion ratio, and quota dial and countdown colors all use
+the recent smoothed burn rate. Green means low risk, yellow means the quota is on pace
+to run out at reset, and the color moves toward red as exhaustion approaches. Hover or
+focus the status line on desktop and web, or tap it on mobile, to see the details and change
 **5-hour burn-rate smoothing** or **Weekly burn-rate smoothing**. The same controls are
 in Settings. Longer durations make the colors less sensitive to recent usage. The
 defaults are 30 minutes and one day.
@@ -174,10 +174,10 @@ defaults are 30 minutes and one day.
 For a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub), the percentages pool
 accounts with a current reading, and the countdown shows the next reported reset.
 Turn on **5-hour depletion ratio** and **Weekly depletion ratio** independently in Settings
-to show each percentage beside its dial label. The ratio compares time until reset with
-projected time until the quota runs out. Above 100% means quota is projected to run out
-first. A negative projected remainder shows how far past the limit the current pace
-would take you.
+to show each percentage beside its dial label. The ratio estimates how much of the
+remaining quota you will use before reset. Above 100% means you are on pace to run out
+first. A negative projected remainder shows how far past the limit that pace would take
+you. Projections and ratios appear once a recent burn-rate estimate is available.
 
 On desktop and web, **All models** shows the environment's provider quotas. Turn on
 **Show model names** in the section to see each provider's model list. Both preferences

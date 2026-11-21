@@ -474,8 +474,6 @@ export interface LimitPoolWindow {
   readonly remainingPercent: number;
   readonly usedPercent: number;
   readonly pace: LimitPace | null;
-  readonly projectedUsedPercent: number | null;
-  readonly depletionRatioPercent: number | null;
   readonly burnRatePercentPerSecond?: number;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
@@ -705,18 +703,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
             ];
       })
       .sort((left, right) => left.at - right.at);
-    const nextReset = resets[0]?.at;
-    const forecasts =
-      nextReset === undefined
-        ? []
-        : members.flatMap((member) => {
-            const used = projectedWindowUsedPercent(member.window, now, nextReset);
-            return used === null ? [] : [used * weightOf.get(member)!];
-          });
-    const projectedUsedPercent =
-      forecasts.length === members.length
-        ? forecasts.reduce((sum, used) => sum + used, 0) / totalWeight
-        : null;
     const measuredMembers = members.filter((m) => m.window.burnRatePercentPerSecond !== undefined);
     const burnRate =
       measuredMembers.length === members.length
@@ -736,8 +722,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       usedPercent,
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
-      projectedUsedPercent,
-      depletionRatioPercent: usageDepletionRatioPercent(usedPercent, projectedUsedPercent),
       ...(burnRate === undefined ? {} : { burnRatePercentPerSecond: burnRate }),
       resets,
     };
@@ -771,27 +755,6 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
   const length = window.windowDurationMins * MINUTE;
   if (length <= 0) return null;
   return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
-}
-
-export function projectedWindowUsedPercent(
-  window: ServerProviderUsageWindow,
-  now: number,
-  at?: number,
-): number | null {
-  const reset = resetMillis(window);
-  if (reset === null || reset <= now || (at !== undefined && at <= now)) return null;
-  const elapsed = elapsedShare(window, now);
-  if (elapsed === null || elapsed === 0) return null;
-  const projectedElapsed = at === undefined ? 1 : elapsedShare(window, at);
-  return projectedElapsed === null ? null : (window.usedPercent * projectedElapsed) / elapsed;
-}
-
-export function usageDepletionRatioPercent(
-  usedPercent: number,
-  projectedUsedPercent: number | null,
-): number | null {
-  if (projectedUsedPercent === null || usedPercent >= 100) return null;
-  return Math.round((100 * Math.max(0, projectedUsedPercent - usedPercent)) / (100 - usedPercent));
 }
 
 // Bars show quota remaining, so even pace tracks time remaining.

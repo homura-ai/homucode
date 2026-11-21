@@ -7,6 +7,7 @@ import {
   statusLineColorMix,
   statusLineEffortPosition,
   statusLineNativeColorMix,
+  statusLineUsageHue,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
   statusLineLimitEnded,
@@ -32,15 +33,9 @@ const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const appVersion = Constants.expoConfig?.version ?? null;
 
 function useUsedColor(percent: number) {
-  const { themeAppearance, themeVariables } = useAppearancePreferences();
-  return statusLineColorMix(
-    percent,
-    [
-      themeAppearance === "dark" ? "#34d399" : "#047857",
-      themeVariables["--color-danger-foreground"],
-    ],
-    statusLineNativeColorMix,
-  );
+  const { themeAppearance } = useAppearancePreferences();
+  const tone = themeAppearance === "dark" ? "64.4%, 51.6%" : "93.5%, 24.3%";
+  return `hsl(${statusLineUsageHue(percent).toFixed(4)}, ${tone})`;
 }
 
 function Dial(props: {

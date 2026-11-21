@@ -21,6 +21,7 @@ import {
   statusLineDisplayCost,
   statusLineNativeColorMix,
   statusLineQuotaColorPercent,
+  statusLineUsageHue,
   parseStatusLineBurnTau,
   reserveStatusLineText,
   splitStatusLineItems,
@@ -404,6 +405,7 @@ describe("buildStatusLineInput", () => {
               usedPercent,
               resetsAt: reset,
               windowDurationMins: 180,
+              burnRatePercentPerSecond: (10 + index * 10) / 3_600,
             },
             { id: "seven_day", kind: "weekly" as const, label: "Weekly", usedPercent: 60 },
           ],
@@ -426,8 +428,9 @@ describe("buildStatusLineInput", () => {
         label: "Session",
         scope: [],
         remainingPercent: 50,
-        projectedRemainingPercent: 25,
+        projectedRemainingPercent: 35,
         resetsAtMs: Date.parse(reset),
+        burnRatePercentPerSecond: 15 / 3_600,
       },
       {
         id: "seven_day",
@@ -449,7 +452,7 @@ describe("buildStatusLineInput", () => {
     expect(buildStatusLineStats(routed)).toMatchObject({
       fiveHour: {
         remainingPercent: 50,
-        projectedRemainingPercent: 25,
+        projectedRemainingPercent: 35,
         resetsAtMs: Date.parse(reset),
       },
       weekly: { remainingPercent: 40, resetsAtMs: null },
@@ -460,6 +463,7 @@ describe("buildStatusLineInput", () => {
     });
     const nearlySpent = buildStatusLineStats({
       ...routed,
+      showSessionDepletionRatio: true,
       usageLimitSources: [
         {
           ...hub,
@@ -482,6 +486,7 @@ describe("buildStatusLineInput", () => {
       ],
     }).fiveHour!;
     expect(nearlySpent.remainingPercent).toBe(1);
+    expect(nearlySpent.depletionRatioPercent).toBe(50);
     expect(statusLineQuotaColorPercent(nearlySpent, routed.nowMs)).toBeCloseTo(20);
     expect(
       buildStatusLineStats({ ...source, usageLimitSources: routed.usageLimitSources }).weekly,
@@ -514,8 +519,9 @@ describe("buildStatusLineInput", () => {
       }).fiveHour,
     ).toEqual({
       remainingPercent: 70,
-      projectedRemainingPercent: 25,
+      projectedRemainingPercent: 48,
       resetsAtMs: Date.parse(reset),
+      burnRatePercentPerSecond: 15 / 3_600,
     });
     const accountsAfterReset = hub.accounts.map((account, index) => ({
       ...account,
@@ -535,8 +541,9 @@ describe("buildStatusLineInput", () => {
       }).fiveHour,
     ).toEqual({
       remainingPercent: 30,
-      projectedRemainingPercent: -5,
+      projectedRemainingPercent: 10,
       resetsAtMs: Date.parse(reset),
+      burnRatePercentPerSecond: 20 / 3_600,
     });
 
     const weeklyOnly = hub.accounts.map((account) => ({
@@ -656,17 +663,19 @@ describe("buildStatusLineInput", () => {
   });
 
   it.each([
-    [0, 150, 100, 100],
-    [25.1, 150, 75, 50],
-    [30, 225, 70, -20],
-    [44, 300, 56, null],
-    [55, 0, 45, null],
+    [0, 150, 0, 100, 100],
+    [25.1, 150, 4, 75, 65],
+    [30, 225, 28, 70, -35],
+    [44, 150, undefined, 56, null],
+    [55, 0, 12, 45, null],
+    [55, 150, 0, 45, 45],
   ] as const)(
-    "uses %s%% spent with %s minutes to reset for the remaining dial and projection",
-    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent) => {
+    "projects %s%% spent with %s minutes left and a smoothed burn of %s%% per hour",
+    (usedPercent, minutesToReset, hourlyBurn, remainingPercent, projectedRemainingPercent) => {
       const provider = source.providers[0]!;
       const stats = buildStatusLineStats({
         ...source,
+        showSessionDepletionRatio: true,
         providers: [
           {
             ...provider,
@@ -679,6 +688,9 @@ describe("buildStatusLineInput", () => {
                   label: "5h",
                   usedPercent,
                   windowDurationMins: 300,
+                  ...(hourlyBurn === undefined
+                    ? {}
+                    : { burnRatePercentPerSecond: hourlyBurn / 3_600 }),
                   resetsAt: DateTime.formatIso(
                     DateTime.makeUnsafe(source.nowMs + minutesToReset * 60_000),
                   ),
@@ -689,18 +701,21 @@ describe("buildStatusLineInput", () => {
         ],
       });
       expect(stats.fiveHour).toMatchObject({ remainingPercent, projectedRemainingPercent });
+      if (hourlyBurn === undefined || minutesToReset === 0) {
+        expect(stats.fiveHour?.depletionRatioPercent).toBeUndefined();
+      }
     },
   );
 
   it.each([
-    [25, 50, 33],
-    [50, 0, 100],
-    [60, -20, 150],
-    [0, 100, 0],
-    [100, -100, undefined],
+    [25, 10, 65, 13],
+    [50, 50, 0, 100],
+    [60, 60, -20, 150],
+    [0, 0, 100, 0],
+    [100, 100, -100, undefined],
   ] as const)(
-    "reports independent depletion ratios for %s%% spent when enabled",
-    (usedPercent, projected, ratio) => {
+    "reports independent depletion ratios for %s%% spent and %s%% forecast burn",
+    (usedPercent, projectedBurn, projected, ratio) => {
       const provider = source.providers[0]!;
       const ratioSource = {
         ...source,
@@ -716,6 +731,7 @@ describe("buildStatusLineInput", () => {
                   label: "5h",
                   usedPercent,
                   windowDurationMins: 300,
+                  burnRatePercentPerSecond: projectedBurn / (150 * 60),
                   resetsAt: DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 150 * 60_000)),
                 },
                 {
@@ -724,6 +740,7 @@ describe("buildStatusLineInput", () => {
                   label: "7d",
                   usedPercent,
                   windowDurationMins: 10_080,
+                  burnRatePercentPerSecond: projectedBurn / (5_040 * 60),
                   resetsAt: DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 5_040 * 60_000)),
                 },
               ],
@@ -845,6 +862,7 @@ describe("status line presentation", () => {
     expect(statusLineColorMix(24.5, colors, mix)).toBe("green:yellow:0.49");
     expect(statusLineColorMix(50, colors, mix)).toBe("yellow");
     expect(statusLineColorMix(75, colors, mix)).toBe("yellow:red:0.5");
+    expect([0, 25, 50, 75, 100].map(statusLineUsageHue)).toEqual([120, 90, 60, 30, 0]);
     expect([100, 99, 98, 94, 90, 70].map(statusLineCacheRisk)).toEqual([0, 25, 50, 75, 100, 100]);
   });
 
@@ -867,13 +885,14 @@ describe("status line presentation", () => {
     expect(statusLineBurnRisk(limit, 0)).toBeCloseTo(risk);
     expect(statusLineQuotaColorPercent(limit, 0)).toBeCloseTo(risk);
     expect(statusLineBurnRisk(limit, 1_000_000)).toBe(0);
+    expect(statusLineQuotaColorPercent(limit, 1_000_000)).toBe(50);
     expect(statusLineBurnRisk({ ...limit, remainingPercent: 0 }, 0)).toBe(100);
   });
 
   it.each([
     [null, null, 99],
     [1_000_000, null, 99],
-    [1_000_000, -20, 100],
+    [1_000_000, -20, 99],
   ] as const)(
     "colors an unmeasured quota with reset %s and projected remainder %s as %s",
     (resetsAtMs, projectedRemainingPercent, colorPercent) => {

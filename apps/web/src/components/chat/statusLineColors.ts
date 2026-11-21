@@ -2,6 +2,7 @@ import {
   STATUS_LINE_EFFORT_COLORS,
   statusLineColorMix,
   statusLineEffortPosition,
+  statusLineUsageHue,
 } from "@t3tools/client-runtime/status-line";
 
 function oklabMix(from: string, to: string, amount: number): string {
@@ -9,11 +10,7 @@ function oklabMix(from: string, to: string, amount: number): string {
 }
 
 export function statusUsedColor(percent: number): string {
-  return statusLineColorMix(
-    percent,
-    ["var(--success-foreground)", "var(--error-foreground)"],
-    oklabMix,
-  );
+  return `hsl(from var(--success-foreground) ${statusLineUsageHue(percent)} s l)`;
 }
 
 export function statusEffortColor(effort: string): string | undefined {

@@ -13,9 +13,7 @@ import {
 import {
   collectLimitPools,
   collectProviderUsageLimits,
-  projectedWindowUsedPercent,
   remainingPercent,
-  usageDepletionRatioPercent,
   usageLimitSourceAtEndpoint,
 } from "@t3tools/shared/usageLimits";
 
@@ -45,8 +43,6 @@ export type StatusLineUsageSource = Pick<
 
 type StatusLineUsageWindow = ServerProviderUsageWindow & {
   readonly remainingPercent?: number;
-  readonly projectedUsedPercent?: number | null;
-  readonly depletionRatioPercent?: number | null;
 };
 
 function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWindow): boolean {
@@ -108,8 +104,6 @@ function hubUsageWindows(
         kind: window.kind,
         usedPercent: window.usedPercent,
         remainingPercent: window.remainingPercent,
-        projectedUsedPercent: window.projectedUsedPercent,
-        depletionRatioPercent: window.depletionRatioPercent,
         ...(resetsAt === undefined ? {} : { resetsAt }),
         ...(window.burnRatePercentPerSecond === undefined
           ? {}
@@ -320,22 +314,34 @@ export interface StatusLineStats {
   readonly outputTokens: number | null;
 }
 
+function smoothedBurnToReset(
+  rate: number | undefined,
+  resetsAtMs: number | null,
+  nowMs: number,
+): number | null {
+  if (rate === undefined || resetsAtMs === null || resetsAtMs <= nowMs) return null;
+  return (rate * (resetsAtMs - nowMs)) / 1_000;
+}
+
 function limitFromWindow(
   window: StatusLineUsageWindow,
   nowMs: number,
   showDepletionRatio = false,
 ): StatusLineLimit {
-  const resetsAtMs = window.resetsAt === undefined ? Number.NaN : Date.parse(window.resetsAt);
-  const projected = window.projectedUsedPercent ?? projectedWindowUsedPercent(window, nowMs);
-  const depletionRatio = showDepletionRatio
-    ? (window.depletionRatioPercent ?? usageDepletionRatioPercent(window.usedPercent, projected))
-    : null;
+  const reset = Date.parse(window.resetsAt ?? "");
+  const resetsAtMs = Number.isFinite(reset) ? reset : null;
+  const burn = smoothedBurnToReset(window.burnRatePercentPerSecond, resetsAtMs, nowMs);
+  const exactRemaining = 100 - window.usedPercent;
+  const depletionRatio =
+    showDepletionRatio && burn !== null && exactRemaining > 0
+      ? Math.round((100 * burn) / exactRemaining)
+      : null;
   const remaining = window.remainingPercent ?? remainingPercent(window);
   return {
     remainingPercent: remaining,
-    projectedRemainingPercent: projected === null ? null : Math.round(100 - projected),
+    projectedRemainingPercent: burn === null ? null : Math.round(exactRemaining - burn),
     ...(depletionRatio === null ? {} : { depletionRatioPercent: depletionRatio }),
-    resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
+    resetsAtMs,
     ...(window.usedPercent === 100 - remaining ? {} : { usedPercent: window.usedPercent }),
     ...(window.burnRatePercentPerSecond === undefined
       ? {}
@@ -436,10 +442,9 @@ export function statusLineCacheRisk(percent: number): number {
 export function statusLineBurnRisk(limit: StatusLineLimit, nowMs: number): number {
   const used = limit.usedPercent ?? 100 - limit.remainingPercent;
   if (used >= 100) return 100;
-  const left = ((limit.resetsAtMs ?? nowMs) - nowMs) / 1_000;
-  const rate = limit.burnRatePercentPerSecond ?? 0;
-  if (rate <= 0 || left <= 0) return 0;
-  const depletionRatio = (rate * left) / (100 - used);
+  const burn = smoothedBurnToReset(limit.burnRatePercentPerSecond, limit.resetsAtMs, nowMs);
+  if (burn === null) return 0;
+  const depletionRatio = burn / (100 - used);
   // The extra term keeps the first half and its slope at 1×, and raises 2× to 90 risk.
   const excess = Math.max(0, depletionRatio - 1);
   const odds = depletionRatio ** 2 * (1 + 1.25 * excess ** 2);
@@ -447,10 +452,18 @@ export function statusLineBurnRisk(limit: StatusLineLimit, nowMs: number): numbe
 }
 
 export function statusLineQuotaColorPercent(limit: StatusLineLimit, nowMs: number): number {
-  if (limit.resetsAtMs !== null && limit.burnRatePercentPerSecond !== undefined) {
+  if (
+    limit.resetsAtMs !== null &&
+    limit.resetsAtMs > nowMs &&
+    limit.burnRatePercentPerSecond !== undefined
+  ) {
     return statusLineBurnRisk(limit, nowMs);
   }
-  return clampPercent(100 - (limit.projectedRemainingPercent ?? limit.remainingPercent));
+  return clampPercent(100 - limit.remainingPercent);
+}
+
+export function statusLineUsageHue(percent: number): number {
+  return 120 * (1 - clampPercent(percent) / 100);
 }
 
 export function statusLineColorMix(
