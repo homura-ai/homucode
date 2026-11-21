@@ -435,7 +435,7 @@ export function statusLineGaugeUsedPercent(
   return clampPercent(kind === "context" ? percent : 100 - (projectedRemainingPercent ?? percent));
 }
 
-// A 2% miss is already yellow; a 10% miss is red.
+// A 2% miss is halfway along the scale, and a 10% miss reaches red.
 export function statusLineCacheRisk(percent: number): number {
   const miss = Math.max(0, 100 - percent);
   return clampPercent(miss <= 2 ? 25 * miss : 50 + (50 * (miss - 2)) / 8);
@@ -464,7 +464,7 @@ export function statusLineColorMix(
 
 export function statusLineNativeColorMix(from: string, to: string, amount: number): string {
   const channels = (color: string) => {
-    const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1];
+    const hex = /^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(color)?.[1];
     if (hex) return [0, 2, 4].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
     return /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color)?.slice(1).map(Number);
   };

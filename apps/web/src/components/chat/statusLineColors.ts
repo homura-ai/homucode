@@ -11,7 +11,7 @@ function oklabMix(from: string, to: string, amount: number): string {
 export function statusUsedColor(percent: number): string {
   return statusLineColorMix(
     percent,
-    ["var(--success-foreground)", "var(--warning-foreground)", "var(--error-foreground)"],
+    ["var(--success-foreground)", "var(--error-foreground)"],
     oklabMix,
   );
 }

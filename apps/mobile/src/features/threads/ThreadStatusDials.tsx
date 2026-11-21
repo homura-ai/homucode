@@ -32,18 +32,18 @@ const DIAL_SIZE = 26;
 const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const appVersion = Constants.expoConfig?.version ?? null;
-
-function useUsedPalette() {
-  const { themeAppearance, themeVariables } = useAppearancePreferences();
-  return [
-    themeAppearance === "dark" ? "#34d399" : "#047857",
-    themeVariables["--color-warning-foreground"],
-    themeVariables["--color-danger-foreground"],
-  ] as const;
-}
+const MODEL_NAME_COLORS = { light: "#6f3f99", dark: "#d8afff" };
 
 function useUsedColor(percent: number) {
-  return statusLineColorMix(percent, useUsedPalette(), statusLineNativeColorMix);
+  const { themeAppearance, themeVariables } = useAppearancePreferences();
+  return statusLineColorMix(
+    percent,
+    [
+      themeAppearance === "dark" ? "#34d399" : "#047857",
+      themeVariables["--color-danger-foreground"],
+    ],
+    statusLineNativeColorMix,
+  );
 }
 
 function useGaugeColor(
@@ -151,6 +151,30 @@ function Dial(props: {
   );
 }
 
+function effortLabel(effort: string): string {
+  switch (effort.toLowerCase()) {
+    case "low":
+      return "lo";
+    case "medium":
+      return "med";
+    case "high":
+      return "hi";
+    case "xhigh":
+    case "extra high":
+    case "extra-high":
+    case "extra_high":
+      return "xhi";
+    case "max":
+      return "max";
+    case "ultra":
+    case "ultrathink":
+    case "ultracode":
+      return "ult";
+    default:
+      return effort;
+  }
+}
+
 function Effort({ effort }: { readonly effort: string }) {
   const { themeAppearance } = useAppearancePreferences();
   const position = statusLineEffortPosition(effort);
@@ -166,7 +190,7 @@ function Effort({ effort }: { readonly effort: string }) {
         );
   return (
     <Text numberOfLines={1} className="text-2xs" style={{ color }}>
-      {effort}
+      {effortLabel(effort)}
     </Text>
   );
 }
@@ -244,7 +268,7 @@ export function minimumStatusDialWidth(stats: StatusLineStats, fontScale: number
     (stats.modelName === null
       ? 0
       : Math.min(90, estimateTextWidth(stats.modelName, fontScale)) +
-        (stats.effort === null ? 0 : estimateTextWidth(stats.effort, fontScale)) +
+        (stats.effort === null ? 0 : estimateTextWidth(effortLabel(stats.effort), fontScale)) +
         10)
   );
 }
@@ -269,7 +293,7 @@ export function ThreadStatusDialStrip(props: {
   readonly fontScale: number;
 }) {
   const gt = useGT();
-  const { themeVariables } = useAppearancePreferences();
+  const { themeAppearance, themeVariables } = useAppearancePreferences();
   const { stats, nowMs, availableWidth, fontScale } = props;
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
   const contextLabel = gt("Context", { $context: "model context window" });
@@ -347,7 +371,12 @@ export function ThreadStatusDialStrip(props: {
     <View className="min-w-0 shrink flex-row items-center gap-2">
       {stats.modelName === null ? null : (
         <View className="min-w-0 shrink flex-row items-center gap-1">
-          <Text medium numberOfLines={1} className="max-w-24 shrink text-xs font-medium">
+          <Text
+            medium
+            numberOfLines={1}
+            className="max-w-24 shrink text-xs font-medium"
+            style={{ color: MODEL_NAME_COLORS[themeAppearance] }}
+          >
             {stats.modelName}
           </Text>
           {stats.effort === null ? null : <Effort effort={stats.effort} />}
@@ -554,6 +583,7 @@ export function ThreadStatusDialDetails(props: {
   readonly nowMs: number;
 }) {
   const gt = useGT();
+  const { themeAppearance } = useAppearancePreferences();
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
@@ -620,7 +650,7 @@ export function ThreadStatusDialDetails(props: {
         )}
         {stats.modelName === null ? null : (
           <Fact name={gt("Model")}>
-            {stats.modelName}
+            <Text style={{ color: MODEL_NAME_COLORS[themeAppearance] }}>{stats.modelName}</Text>
             {stats.effort === null ? null : (
               <>
                 {" "}

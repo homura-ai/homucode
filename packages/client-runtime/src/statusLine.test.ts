@@ -20,6 +20,7 @@ import {
   statusLineColorMix,
   statusLineDisplayCost,
   statusLineGaugeUsedPercent,
+  statusLineNativeColorMix,
   parseStatusLineBurnTau,
   reserveStatusLineText,
   splitStatusLineItems,
@@ -802,6 +803,10 @@ describe("status line presentation", () => {
     expect(statusLineColorMix(50, colors, mix)).toBe("yellow");
     expect(statusLineColorMix(75, colors, mix)).toBe("yellow:red:0.5");
     expect([100, 99, 98, 94, 90, 70].map(statusLineCacheRisk)).toEqual([0, 25, 50, 75, 100, 100]);
+  });
+
+  it("interpolates native theme colors with an eight-digit hex endpoint", () => {
+    expect(statusLineNativeColorMix("#047857", "#ffdad6ff", 0.5)).toBe("rgb(130, 169, 151)");
   });
 
   it.each([
