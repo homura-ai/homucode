@@ -57,7 +57,7 @@ const EMPTY_QUEUED_COUNT_ATOM = Atom.make(0).pipe(
 );
 
 type QueueTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
-type QueueAction = "steer" | "edit" | "remove";
+type QueueAction = "steer" | "send" | "edit" | "remove";
 
 function useThreadQueueWorkflow(target: QueueTarget) {
   return useAtomValue(environmentThreadDetails.queueWorkflowAtom(target));
@@ -205,28 +205,40 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
       navigation.goBack();
       return;
     }
-    if (action !== "steer" && action !== "remove") return;
+    if (action !== "steer" && action !== "send" && action !== "remove") return;
     busyRef.current = true;
     setBusyRunId(runId);
     void Haptics.selectionAsync();
     const result =
       action === "remove"
         ? await cancel(buildCancelQueuedRunCommand({ ...target, runId }))
-        : workflow?.canSendNow
-          ? await resume({ ...target, input: { threadId: target.threadId, runId } })
-          : workflow?.activeRun && workflow.canPromoteToSteer
+        : action === "send"
+          ? workflow?.activeRun
             ? await promote({
                 ...target,
                 input: {
                   threadId: target.threadId,
                   queuedRunId: runId,
                   targetRunId: workflow.activeRun.id,
+                  interrupt: true,
                 },
               })
-            : null;
+            : null
+          : workflow?.canSendNow
+            ? await resume({ ...target, input: { threadId: target.threadId, runId } })
+            : workflow?.activeRun && workflow.canPromoteToSteer
+              ? await promote({
+                  ...target,
+                  input: {
+                    threadId: target.threadId,
+                    queuedRunId: runId,
+                    targetRunId: workflow.activeRun.id,
+                  },
+                })
+              : null;
     busyRef.current = false;
     setBusyRunId(null);
-    if (action === "steer" && result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+    if (action !== "remove" && result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       Dialog.alert(
         m(msg("Could not send queued message")),
@@ -320,6 +332,19 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                             title: gt("Steer now"),
                             attributes: { disabled: !controls.canSend },
                             image: "arrow.up",
+                          },
+                        ]
+                      : []),
+                    // Send now stops the running turn; during compaction Steer now already does that.
+                    ...(workflow?.activeRun &&
+                    !workflow.canSendNow &&
+                    !workflow.promoteSkipsCompaction
+                      ? [
+                          {
+                            id: "send",
+                            title: gt("Send now"),
+                            attributes: { disabled: busyRunId !== null || controls.isEditing },
+                            image: "paperplane",
                           },
                         ]
                       : []),

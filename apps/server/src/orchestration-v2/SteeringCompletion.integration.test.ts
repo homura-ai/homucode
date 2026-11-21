@@ -3707,16 +3707,21 @@ it.effect("queues a goal clear without stopping work when no goal drives it", ()
   }),
 );
 
-it.effect("promotes a queued goal by stopping the running turn", () =>
+it.effect.each([
+  { title: "promotes a queued goal", text: "/goal ship it", fresh: false, interrupt: undefined },
+  { title: "Send now starts a queued message", text: "next", fresh: false, interrupt: true },
+  { title: "Send now starts a fresh queued message", text: "next", fresh: true, interrupt: true },
+] as const)("$title by stopping the running turn", ({ text, fresh, interrupt }) =>
   Effect.gen(function* () {
-    const { started, steered, layer, startFirstTurn, send, read } =
-      yield* goalHarness("goal-promote");
+    const { started, steered, layer, startFirstTurn, send, read } = yield* goalHarness(
+      `goal-promote-${fresh}-${interrupt}`,
+    );
     yield* Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
       const threadId = yield* startFirstTurn;
       yield* send("queued", "queued", "queue");
-      yield* send("goal", "/goal ship it", "queue");
+      yield* send("goal", text, "queue", fresh);
       const goalRun = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
         (run) => run.userMessageId === MessageId.make("message:goal"),
       )!;
@@ -3726,13 +3731,14 @@ it.effect("promotes a queued goal by stopping the running turn", () =>
         threadId,
         queuedRunId: goalRun.id,
         targetRunId: started[0]!.runId,
+        ...(interrupt === undefined ? {} : { interrupt }),
       });
       yield* worker.drain();
 
       assert.deepEqual(steered, []);
       assert.deepEqual(yield* read(threadId), {
         queue: ["queued"],
-        started: ["first", "/goal ship it"].map(timestamped),
+        started: ["first", text].map(timestamped),
         stopRequested: true,
       });
     }).pipe(Effect.provide(layer));

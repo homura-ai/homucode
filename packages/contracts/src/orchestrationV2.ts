@@ -3648,6 +3648,8 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     queuedRunId: RunId,
     targetRunId: RunId,
+    /** Send now: stop the target run and start this message as the next turn instead of steering. */
+    interrupt: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     type: Schema.Literal("queue.resume"),
