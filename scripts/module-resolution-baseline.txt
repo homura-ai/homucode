@@ -78,6 +78,9 @@ react-native-screens -> ./TabsHost
 react-native-screens -> ./TabsScreen
 react-native-webview -> react-native/Libraries/Types/CodegenTypes
 
+# expo-font types name expo-asset without depending on it; the mobile app declares expo-asset.
+expo-font -> expo-asset
+
 # Storage drivers the marketing app does not use.
 unstorage -> @azure/app-configuration
 unstorage -> @azure/cosmos
