@@ -12918,7 +12918,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection,
         queuedRunId: queuedRun.id,
         targetRunId: stops ? target.id : undefined,
-        reason: stoppedBy(messageStopActor(queuedMessage), "to send a queued message now"),
+        reason:
+          command.reason ??
+          stoppedBy(messageStopActor(queuedMessage), "to send a queued message now"),
         now,
       });
     }
