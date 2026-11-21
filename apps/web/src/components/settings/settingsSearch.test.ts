@@ -97,6 +97,7 @@ describe("searchSettings", () => {
       ["App scripts", "/settings/homucode"],
       ["Quick model", "/settings/agent-behavior"],
       ["Device names", "/settings/agent-behavior"],
+      ["Show model names", "/settings/agent-behavior"],
       ["Ask again after a restart", "/settings/agent-behavior"],
       ["Update when agents are idle", "/settings/agent-behavior"],
       ["Show Building Homu settings", "/settings/building-homu"],

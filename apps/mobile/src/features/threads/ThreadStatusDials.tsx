@@ -2,12 +2,11 @@ import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import {
   formatStatusLineTokens,
   STATUS_LINE_EFFORT_COLORS,
-  statusLineBurnRisk,
   statusLineCacheRisk,
+  statusLineQuotaColorPercent,
   statusLineColorMix,
   statusLineEffortPosition,
   statusLineNativeColorMix,
-  statusLineGaugeUsedPercent,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
   statusLineLimitEnded,
@@ -27,7 +26,6 @@ import { fitMobileStatusDials, mobileStatusLineModelLabels } from "./thread-stat
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
-type GaugeKind = "context" | "limit";
 const DIAL_SIZE = 26;
 const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -45,23 +43,9 @@ function useUsedColor(percent: number) {
   );
 }
 
-function useGaugeColor(
-  percent: number,
-  kind: GaugeKind,
-  projectedRemainingPercent?: number | null,
-) {
-  const { themeVariables } = useAppearancePreferences();
-  const used = statusLineGaugeUsedPercent(percent, kind, projectedRemainingPercent);
-  return {
-    color: useUsedColor(used),
-    fillOpacity: 0.3 * (used / 100) ** 4,
-    foreground: themeVariables["--color-foreground"],
-  };
-}
-
 function Dial(props: {
   readonly percent: number;
-  readonly kind: GaugeKind;
+  readonly colorPercent: number;
   readonly projectedRemainingPercent?: number | null;
   readonly label: string;
   readonly caption?: string | undefined;
@@ -69,12 +53,11 @@ function Dial(props: {
   readonly dimmed?: boolean;
 }) {
   const interLoaded = useContext(StatusLineInterLoaded);
+  const { themeVariables } = useAppearancePreferences();
   const percent = statusLineGaugePercent(props.percent);
-  const { color, fillOpacity, foreground } = useGaugeColor(
-    props.percent,
-    props.kind,
-    props.projectedRemainingPercent,
-  );
+  const color = useUsedColor(props.colorPercent);
+  const fillOpacity = 0.3 * (Math.max(0, Math.min(100, props.colorPercent)) / 100) ** 4;
+  const foreground = themeVariables["--color-foreground"];
   return (
     <View
       accessible
@@ -205,7 +188,8 @@ function LimitDial(props: {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
   const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
-  const resetColor = useUsedColor(statusLineBurnRisk(props.limit, props.nowMs));
+  const risk = statusLineQuotaColorPercent(props.limit, props.nowMs);
+  const resetColor = useUsedColor(risk);
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remainingLabel = gt("{percent}% remaining", { percent: remainingPercent });
   const projectedLabel =
@@ -219,7 +203,7 @@ function LimitDial(props: {
   return (
     <Dial
       percent={remainingPercent}
-      kind="limit"
+      colorPercent={risk}
       projectedRemainingPercent={projectedRemainingPercent}
       caption={
         props.showDepletionRatio && depletionRatioPercent !== undefined
@@ -406,7 +390,7 @@ export function ThreadStatusDialStrip(props: {
       {stats.contextPercent !== null && context !== null ? (
         <Dial
           percent={stats.contextPercent}
-          kind="context"
+          colorPercent={stats.contextPercent}
           caption={contextCaption}
           detail={<StripValue>{context}</StripValue>}
           label={gt("Context {percent}% used, {context} tokens", {
@@ -516,18 +500,16 @@ export function ThreadStatusDialStrip(props: {
 
 interface MeterValue {
   readonly percent: number;
-  readonly kind: GaugeKind;
-  readonly projectedRemainingPercent?: number | null;
+  readonly color: string;
 }
 
-function Meter(props: MeterValue) {
-  const { color } = useGaugeColor(props.percent, props.kind, props.projectedRemainingPercent);
+function Meter({ color, percent }: MeterValue) {
   return (
     <View className="mt-1 h-1 overflow-hidden rounded-full">
       <View className="absolute inset-0" style={{ backgroundColor: color, opacity: 0.2 }} />
       <View
         className="h-full rounded-full"
-        style={{ backgroundColor: color, width: `${statusLineGaugePercent(props.percent)}%` }}
+        style={{ backgroundColor: color, width: `${statusLineGaugePercent(percent)}%` }}
       />
     </View>
   );
@@ -572,12 +554,12 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
-  const resetColor = useUsedColor(statusLineBurnRisk(props.limit, props.nowMs));
+  const resetColor = useUsedColor(statusLineQuotaColorPercent(props.limit, props.nowMs));
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
+      meter={{ percent: remainingPercent, color: resetColor }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
       note={
         note === null ? null : (
@@ -614,6 +596,7 @@ export function ThreadStatusDialDetails(props: {
   const { stats, nowMs } = props;
   const effortStyle = effortTextStyle(stats.effort, themeAppearance);
   const uptime = statusLineUptime(props.createdAt, nowMs);
+  const contextColor = useUsedColor(stats.contextPercent ?? 0);
   const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
   return (
     <View className="gap-4">
@@ -623,7 +606,7 @@ export function ThreadStatusDialDetails(props: {
             name={gt("Context", { $context: "model context window" })}
             {...(stats.contextPercent === null
               ? {}
-              : { meter: { percent: stats.contextPercent, kind: "context" } })}
+              : { meter: { percent: stats.contextPercent, color: contextColor } })}
           >
             {stats.contextPercent === null
               ? null

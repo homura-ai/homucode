@@ -73,15 +73,21 @@ describe("synced client setting values", () => {
       ...DEFAULT_CLIENT_SETTINGS,
       settingsSyncEnabled: false,
       onboardingCompletedAt: "2026-11-16T00:00:00.000Z",
+      statusLineShowAllModels: false,
+      statusLineShowModelNames: true,
     });
     expect(values).not.toHaveProperty("settingsSyncEnabled");
     expect(values).not.toHaveProperty("onboardingCompletedAt");
+    expect(values).not.toHaveProperty("statusLineShowAllModels");
+    expect(values).not.toHaveProperty("statusLineShowModelNames");
     expect(values).toHaveProperty("wordWrap", true);
     expect(
       clientSettingsPatchFromSyncedValues({
         wordWrap: false,
         chatWidth: "not-a-width",
         settingsSyncEnabled: false,
+        statusLineShowAllModels: false,
+        statusLineShowModelNames: true,
         futureSetting: 1,
       }),
     ).toEqual({ wordWrap: false });

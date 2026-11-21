@@ -12755,6 +12755,8 @@
   "b2cc17d714a15e76": "Show all models in status line details",
   "5416694ec0dacb31": "Show models and reported usage limits for this thread’s environment when you hover or focus the status line.",
   "e9b5f7b109cc1ded": "Show models and reported usage limits for this thread’s environment when you hover or focus the status line.",
+  "88d955670fdd5bc0": "Show model names",
+  "37669918687083bd": "List each provider’s model names in the All models section of the status line details.",
   "61a6422a50b51c9d": "Reset / depletion {percent}%",
   "af635934b27d0f55": "Show the time until reset as a percentage of the time until quota is projected to run out.",
   "bd6e8fe1934db6c0": "5-hour depletion ratio",

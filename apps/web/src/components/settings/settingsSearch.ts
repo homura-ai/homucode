@@ -939,6 +939,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["statusline hover focus quota usage extra features"],
   },
   {
+    id: "status-line-model-names",
+    title: msg("Show model names"),
+    to: "/settings/agent-behavior",
+    searchTerms: ["all models statusline quota usage extra features"],
+  },
+  {
     id: "status-line-session-depletion-ratio",
     title: msg("5-hour depletion ratio"),
     to: "/settings/agent-behavior",

@@ -12740,6 +12740,8 @@
   "b2cc17d714a15e76": "Mostrar todos los modelos en los detalles de la línea de estado",
   "5416694ec0dacb31": "Muestra los modelos y los límites de uso disponibles para el entorno de este hilo al pasar el puntero sobre la línea de estado o al enfocarla.",
   "e9b5f7b109cc1ded": "Muestra los modelos y los límites de uso disponibles para el entorno de este hilo al pasar el puntero sobre la línea de estado o al enfocarla.",
+  "88d955670fdd5bc0": "Mostrar nombres de modelos",
+  "37669918687083bd": "Enumera los nombres de los modelos de cada proveedor en la sección «Todos los modelos» de los detalles de la barra de estado.",
   "f311f5a32d4dec24": "Modelo disponible en {duration}",
   "82c863fc509de21d": "Comprobando la disponibilidad del modelo",
   "61a6422a50b51c9d": "Reinicio / agotamiento: {percent}%",

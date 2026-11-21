@@ -3,9 +3,8 @@ import { msg, useGT, useMessages } from "gt-react";
 import {
   buildStatusLineModelUsage,
   formatStatusLineTokens,
-  statusLineBurnRisk,
   statusLineCacheRisk,
-  statusLineGaugeUsedPercent,
+  statusLineQuotaColorPercent,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
   statusLineLimitEnded,
@@ -29,15 +28,9 @@ import { observeResize } from "~/lib/observeResize";
 import type { MessageResolver } from "../../i18n/messages";
 
 import { APP_VERSION } from "../../branding";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
+import { Switch } from "../ui/switch";
 import { statusEffortColor, statusUsedColor } from "./statusLineColors";
-
-function gaugeColor(
-  percent: number,
-  kind: "context" | "limit",
-  projectedRemainingPercent?: number | null,
-): string {
-  return statusUsedColor(statusLineGaugeUsedPercent(percent, kind, projectedRemainingPercent));
-}
 
 function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolver): string {
   if (statusLineLimitEnded(limit, nowMs)) return resolve(msg("window ended"));
@@ -47,7 +40,7 @@ function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolv
 
 function Ring(props: {
   readonly percent: number;
-  readonly usedPercent: number;
+  readonly colorPercent: number;
   readonly projectedRemainingPercent?: number | null;
 }) {
   return (
@@ -57,7 +50,7 @@ function Ring(props: {
         cy="13"
         r="10.5"
         fill="currentColor"
-        fillOpacity={0.3 * (props.usedPercent / 100) ** 4}
+        fillOpacity={0.3 * (Math.max(0, Math.min(100, props.colorPercent)) / 100) ** 4}
         stroke="currentColor"
         strokeOpacity="0.22"
         strokeWidth="3"
@@ -104,7 +97,7 @@ function Ring(props: {
 /** A ring filled to `percent` with the number inside, then what it measures and a detail. */
 function Dial(props: {
   readonly percent: number;
-  readonly kind: "context" | "limit";
+  readonly colorPercent: number;
   readonly projectedRemainingPercent?: number | null;
   readonly name: ReactNode;
   readonly detail: ReactNode;
@@ -117,16 +110,12 @@ function Dial(props: {
       role="img"
       aria-label={props.label}
       className={`flex shrink-0 items-center gap-1.5 ${props.dimmed ? "opacity-50" : ""}`}
-      style={{ color: gaugeColor(props.percent, props.kind, props.projectedRemainingPercent) }}
+      style={{ color: statusUsedColor(props.colorPercent) }}
     >
       <Ring
         percent={percent}
         projectedRemainingPercent={props.projectedRemainingPercent ?? null}
-        usedPercent={statusLineGaugeUsedPercent(
-          props.percent,
-          props.kind,
-          props.projectedRemainingPercent,
-        )}
+        colorPercent={props.colorPercent}
       />
       <span className="grid">
         <span className="font-medium text-2xs/3.5 text-foreground">{props.name}</span>
@@ -148,6 +137,7 @@ function LimitDial(props: {
 }) {
   const gt = useGT();
   const left = statusLineLimitRemaining(props.limit, props.nowMs);
+  const risk = statusLineQuotaColorPercent(props.limit, props.nowMs);
   const note = limitNote(props.limit, props.nowMs, useMessages());
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remaining = gt("{percent}% remaining", { percent: remainingPercent });
@@ -162,7 +152,7 @@ function LimitDial(props: {
   return (
     <Dial
       percent={remainingPercent}
-      kind="limit"
+      colorPercent={risk}
       projectedRemainingPercent={projectedRemainingPercent}
       name={
         <>
@@ -176,9 +166,7 @@ function LimitDial(props: {
         left === null ? null : (
           <>
             <RotateCwIcon />
-            <span style={{ color: statusUsedColor(statusLineBurnRisk(props.limit, props.nowMs)) }}>
-              {left}
-            </span>
+            <span style={{ color: statusUsedColor(risk) }}>{left}</span>
           </>
         )
       }
@@ -290,7 +278,7 @@ export function StatusDialStrip(props: {
             ) : (
               <Dial
                 percent={stats.contextPercent}
-                kind="context"
+                colorPercent={stats.contextPercent}
                 name={contextName}
                 detail={context}
                 label={gt("Context {percent}% used, {context} tokens", {
@@ -394,8 +382,7 @@ function Fact(props: {
   readonly name: string;
   readonly meter?: {
     readonly percent: number;
-    readonly kind: "context" | "limit";
-    readonly projectedRemainingPercent?: number | null;
+    readonly color: string;
   };
   readonly dimmed?: boolean;
   readonly note?: ReactNode;
@@ -410,13 +397,7 @@ function Fact(props: {
         <span
           aria-hidden
           className="mt-0.5 h-1 overflow-hidden rounded-full bg-current/20"
-          style={{
-            color: gaugeColor(
-              props.meter.percent,
-              props.meter.kind,
-              props.meter.projectedRemainingPercent,
-            ),
-          }}
+          style={{ color: props.meter.color }}
         >
           <span
             className="block h-full rounded-full bg-current"
@@ -441,19 +422,14 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = limitNote(props.limit, props.nowMs, useMessages());
+  const color = statusUsedColor(statusLineQuotaColorPercent(props.limit, props.nowMs));
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
+      meter={{ percent: remainingPercent, color }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
-      note={
-        note === "" ? undefined : (
-          <span style={{ color: statusUsedColor(statusLineBurnRisk(props.limit, props.nowMs)) }}>
-            {note}
-          </span>
-        )
-      }
+      note={note === "" ? undefined : <span style={{ color }}>{note}</span>}
       details={[
         ...(projectedRemainingPercent === null
           ? []
@@ -491,7 +467,12 @@ export function StatusDialCard(props: {
             name={gt("Context", { $context: "model context window" })}
             {...(stats.contextPercent === null
               ? {}
-              : { meter: { percent: stats.contextPercent, kind: "context" } })}
+              : {
+                  meter: {
+                    percent: stats.contextPercent,
+                    color: statusUsedColor(stats.contextPercent),
+                  },
+                })}
           >
             {stats.contextPercent === null
               ? null
@@ -578,6 +559,8 @@ export function StatusLineModelUsage({
   readonly source: StatusLineUsageSource & { readonly cwd: string | null };
 }) {
   const gt = useGT();
+  const showModelNames = useClientSettings((settings) => settings.statusLineShowModelNames);
+  const modelNamesLabel = gt("Show model names");
   const providers = buildStatusLineModelUsage({
     ...source,
     providers: resolveProvidersForCwd(source.providers, source.cwd),
@@ -585,13 +568,28 @@ export function StatusLineModelUsage({
   if (providers.length === 0) return null;
   return (
     <section aria-label={gt("All models")} className="mt-3 grid gap-3 border-t pt-3 tabular-nums">
-      <h3 className="font-semibold">{gt("All models")}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h3 className="font-semibold">{gt("All models")}</h3>
+        <label className="flex items-center gap-2 text-2xs text-muted-foreground">
+          {modelNamesLabel}
+          <Switch
+            size="sm"
+            aria-label={modelNamesLabel}
+            checked={showModelNames}
+            onCheckedChange={(statusLineShowModelNames) =>
+              void updateClientSettings({ statusLineShowModelNames })
+            }
+          />
+        </label>
+      </div>
       {providers.map((provider) => (
         <div key={provider.instanceId} className="grid gap-1.5">
           <h4 className="font-medium">{provider.name}</h4>
-          <p className="break-words text-2xs text-muted-foreground">
-            {provider.models.join(" · ")}
-          </p>
+          {showModelNames && provider.models.length > 0 ? (
+            <p className="break-words text-2xs text-muted-foreground">
+              {provider.models.join(" · ")}
+            </p>
+          ) : null}
           {provider.limits.length === 0 ? (
             <p className="text-2xs text-muted-foreground">{gt("Usage limits unavailable")}</p>
           ) : (

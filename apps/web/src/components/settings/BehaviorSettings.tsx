@@ -194,6 +194,7 @@ export function ExtraFeaturesSettings({
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
   const showAllModels = useClientSettings((settings) => settings.statusLineShowAllModels);
+  const showModelNames = useClientSettings((settings) => settings.statusLineShowModelNames);
   return (
     <SettingsSection title={gt("Extra features")}>
       <SettingsRow
@@ -220,6 +221,21 @@ export function ExtraFeaturesSettings({
             aria-label={gt("Show all models in status line details")}
             onCheckedChange={(statusLineShowAllModels) =>
               void updateClientSettings({ statusLineShowAllModels })
+            }
+          />
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("status-line-model-names")}
+        description={gt(
+          "List each provider’s model names in the All models section of the status line details.",
+        )}
+        control={
+          <Checkbox
+            checked={showModelNames}
+            aria-label={gt("Show model names")}
+            onCheckedChange={(statusLineShowModelNames) =>
+              void updateClientSettings({ statusLineShowModelNames })
             }
           />
         }

@@ -19,8 +19,8 @@ import {
   statusLineCacheRisk,
   statusLineColorMix,
   statusLineDisplayCost,
-  statusLineGaugeUsedPercent,
   statusLineNativeColorMix,
+  statusLineQuotaColorPercent,
   parseStatusLineBurnTau,
   reserveStatusLineText,
   splitStatusLineItems,
@@ -458,6 +458,31 @@ describe("buildStatusLineInput", () => {
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
       seven_day: { used_percentage: 60 },
     });
+    const nearlySpent = buildStatusLineStats({
+      ...routed,
+      usageLimitSources: [
+        {
+          ...hub,
+          accounts: hub.accounts.map((account, index) => ({
+            ...account,
+            usageLimits: {
+              ...account.usageLimits,
+              windows: account.usageLimits.windows.map((window) =>
+                window.kind === "session"
+                  ? {
+                      ...window,
+                      usedPercent: 99 + index,
+                      burnRatePercentPerSecond: 0.25 / 3_600,
+                    }
+                  : window,
+              ),
+            },
+          })),
+        },
+      ],
+    }).fiveHour!;
+    expect(nearlySpent.remainingPercent).toBe(1);
+    expect(statusLineQuotaColorPercent(nearlySpent, routed.nowMs)).toBeCloseTo(20);
     expect(
       buildStatusLineStats({ ...source, usageLimitSources: routed.usageLimitSources }).weekly,
     ).toMatchObject({ remainingPercent: 57 });
@@ -631,14 +656,14 @@ describe("buildStatusLineInput", () => {
   });
 
   it.each([
-    [0, 150, 100, 100, 0],
-    [25.1, 150, 75, 50, 50],
-    [30, 225, 70, -20, 100],
-    [44, 300, 56, null, 44],
-    [55, 0, 45, null, 55],
+    [0, 150, 100, 100],
+    [25.1, 150, 75, 50],
+    [30, 225, 70, -20],
+    [44, 300, 56, null],
+    [55, 0, 45, null],
   ] as const)(
-    "uses %s%% spent with %s minutes to reset for the remaining dial and its color",
-    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent, colorPosition) => {
+    "uses %s%% spent with %s minutes to reset for the remaining dial and projection",
+    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent) => {
       const provider = source.providers[0]!;
       const stats = buildStatusLineStats({
         ...source,
@@ -664,9 +689,6 @@ describe("buildStatusLineInput", () => {
         ],
       });
       expect(stats.fiveHour).toMatchObject({ remainingPercent, projectedRemainingPercent });
-      expect(statusLineGaugeUsedPercent(remainingPercent, "limit", projectedRemainingPercent)).toBe(
-        colorPosition,
-      );
     },
   );
 
@@ -770,6 +792,7 @@ describe("buildStatusLineInput", () => {
         remainingPercent: 53,
         projectedRemainingPercent: null,
         resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z"),
+        usedPercent: 47.4,
       },
       weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
       cachePercent: 99,
@@ -831,19 +854,41 @@ describe("status line presentation", () => {
 
   it.each([
     [0, 0],
-    [0.025, 0],
+    [0.025, 20],
     [0.05, 50],
-    [0.1, 75],
+    [0.1, 90],
   ] as const)("colors a burn rate of %s as risk %s", (burnRatePercentPerSecond, risk) => {
     const limit = {
       remainingPercent: 50,
-      projectedRemainingPercent: null,
+      projectedRemainingPercent: -80,
       resetsAtMs: 1_000_000,
       burnRatePercentPerSecond,
     };
-    expect(statusLineBurnRisk(limit, 0)).toBe(risk);
+    expect(statusLineBurnRisk(limit, 0)).toBeCloseTo(risk);
+    expect(statusLineQuotaColorPercent(limit, 0)).toBeCloseTo(risk);
     expect(statusLineBurnRisk(limit, 1_000_000)).toBe(0);
     expect(statusLineBurnRisk({ ...limit, remainingPercent: 0 }, 0)).toBe(100);
+  });
+
+  it.each([
+    [null, null, 99],
+    [1_000_000, null, 99],
+    [1_000_000, -20, 100],
+  ] as const)(
+    "colors an unmeasured quota with reset %s and projected remainder %s as %s",
+    (resetsAtMs, projectedRemainingPercent, colorPercent) => {
+      const limit = { remainingPercent: 1, projectedRemainingPercent, resetsAtMs };
+      expect(statusLineQuotaColorPercent(limit, 0)).toBe(colorPercent);
+      expect(statusLineBurnRisk(limit, 0)).toBe(0);
+    },
+  );
+
+  it("preserves the slope at a 100% depletion ratio", () => {
+    const limit = { remainingPercent: 50, projectedRemainingPercent: null, resetsAtMs: 1_000_000 };
+    const before = statusLineBurnRisk({ ...limit, burnRatePercentPerSecond: 0.04995 }, 0);
+    const after = statusLineBurnRisk({ ...limit, burnRatePercentPerSecond: 0.05005 }, 0);
+    expect((50 - before) / 0.1).toBeCloseTo(0.5, 3);
+    expect((after - 50) / 0.1).toBeCloseTo(0.5, 3);
   });
 
   it("shortens labels before it drops 5h and retains weekly first", () => {

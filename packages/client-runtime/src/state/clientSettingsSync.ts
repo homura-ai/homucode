@@ -13,6 +13,7 @@ const DEVICE_LOCAL_KEYS = new Set<string>([
   "fasterPhoneLaunch",
   "showMessageSenderLabels",
   "statusLineShowAllModels",
+  "statusLineShowModelNames",
   "onboardingCompletedAt",
   "scratchEnvironmentId",
   "voiceMicrophone",

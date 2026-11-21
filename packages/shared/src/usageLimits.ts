@@ -733,7 +733,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       columns: accounts.map(
         (account) => memberByAccount.get(account.key) ?? { account, window: null },
       ),
-      usedPercent: Math.round(usedPercent),
+      usedPercent,
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
       projectedUsedPercent,

@@ -330,17 +330,16 @@ function limitFromWindow(
   const depletionRatio = showDepletionRatio
     ? (window.depletionRatioPercent ?? usageDepletionRatioPercent(window.usedPercent, projected))
     : null;
+  const remaining = window.remainingPercent ?? remainingPercent(window);
   return {
-    remainingPercent: window.remainingPercent ?? remainingPercent(window),
+    remainingPercent: remaining,
     projectedRemainingPercent: projected === null ? null : Math.round(100 - projected),
     ...(depletionRatio === null ? {} : { depletionRatioPercent: depletionRatio }),
     resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
+    ...(window.usedPercent === 100 - remaining ? {} : { usedPercent: window.usedPercent }),
     ...(window.burnRatePercentPerSecond === undefined
       ? {}
-      : {
-          usedPercent: window.usedPercent,
-          burnRatePercentPerSecond: window.burnRatePercentPerSecond,
-        }),
+      : { burnRatePercentPerSecond: window.burnRatePercentPerSecond }),
   };
 }
 
@@ -428,14 +427,6 @@ export function statusLineGaugePercent(percent: number): number {
   return Math.round(clampPercent(percent));
 }
 
-export function statusLineGaugeUsedPercent(
-  percent: number,
-  kind: "context" | "limit",
-  projectedRemainingPercent?: number | null,
-): number {
-  return clampPercent(kind === "context" ? percent : 100 - (projectedRemainingPercent ?? percent));
-}
-
 // A 2% miss is halfway along the scale, and a 10% miss reaches red.
 export function statusLineCacheRisk(percent: number): number {
   const miss = Math.max(0, 100 - percent);
@@ -448,7 +439,18 @@ export function statusLineBurnRisk(limit: StatusLineLimit, nowMs: number): numbe
   const left = ((limit.resetsAtMs ?? nowMs) - nowMs) / 1_000;
   const rate = limit.burnRatePercentPerSecond ?? 0;
   if (rate <= 0 || left <= 0) return 0;
-  return clampPercent(100 - (50 * (100 - used)) / rate / left);
+  const depletionRatio = (rate * left) / (100 - used);
+  // The extra term keeps the first half and its slope at 1×, and raises 2× to 90 risk.
+  const excess = Math.max(0, depletionRatio - 1);
+  const odds = depletionRatio ** 2 * (1 + 1.25 * excess ** 2);
+  return 100 / (1 + 1 / odds);
+}
+
+export function statusLineQuotaColorPercent(limit: StatusLineLimit, nowMs: number): number {
+  if (limit.resetsAtMs !== null && limit.burnRatePercentPerSecond !== undefined) {
+    return statusLineBurnRisk(limit, nowMs);
+  }
+  return clampPercent(100 - (limit.projectedRemainingPercent ?? limit.remainingPercent));
 }
 
 export function statusLineColorMix(
