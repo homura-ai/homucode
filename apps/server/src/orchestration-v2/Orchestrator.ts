@@ -12905,7 +12905,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         nodeId: queuedRootNode.id,
         providerInstanceId: queuedRun.providerInstanceId,
         occurredAt: now,
-        payload: { ...queuedRun, queuePosition: 1 },
+        // The user picked this message, so a Stop that holds the queue does not hold it.
+        payload: {
+          ...queuedRun,
+          queuePosition: 1,
+          ...(queuedRun.queueHeld === true ? { queueHeld: false } : {}),
+        },
       });
       const stops =
         target !== undefined &&

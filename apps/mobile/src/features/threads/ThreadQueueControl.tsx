@@ -337,6 +337,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       : []),
                     // Send now stops the running turn; during compaction Steer now already does that.
                     ...(workflow?.activeRun &&
+                    run.modelCooldownUntil === undefined &&
                     !workflow.canSendNow &&
                     !workflow.promoteSkipsCompaction
                       ? [
