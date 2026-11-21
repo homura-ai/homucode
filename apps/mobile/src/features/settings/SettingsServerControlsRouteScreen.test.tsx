@@ -95,6 +95,7 @@ vi.mock("../threads/thread-settings-options", () => ({
   RUNTIME_MODE_CHOICES: [],
   withManagedRuntimeModeLimits: (choices: readonly unknown[]) => choices,
 }));
+vi.mock("../../components/ui/Menu", () => ({ Menu: Children }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/Button", () => ({
@@ -307,6 +308,7 @@ describe("SettingsServerControlsRouteScreen", () => {
     for (const [label, key] of [
       ["Status line", "statusLineEnabled"],
       ["Weekly depletion ratio", "statusLineShowWeeklyDepletionRatio"],
+      ["Use API prices for thread cost", "statusLineUseApiPrice"],
       ["Subagents inherit parent pin", "subagentsInheritParentPin"],
       ["Autoreviewers (not recommended)", "autoreviewEnabled"],
     ] as const) {
@@ -327,7 +329,7 @@ describe("SettingsServerControlsRouteScreen", () => {
     }
     mocks.readOnly.add("remote");
     act(() => root.render(<SettingsHomuCodeRouteScreen key="read-only" />));
-    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(4);
+    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(5);
   });
 
   it("sends a draft saved during a pending write once that write settles", async () => {

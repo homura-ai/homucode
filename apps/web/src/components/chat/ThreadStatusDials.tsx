@@ -3,10 +3,11 @@ import { msg, useGT, useMessages } from "gt-react";
 import {
   buildStatusLineModelUsage,
   formatStatusLineTokens,
-  statusLineEffortBars,
+  statusLineBurnRisk,
+  statusLineCacheRisk,
+  statusLineGaugeUsedPercent,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
-  statusLineGaugeTone,
   statusLineLimitEnded,
   statusLineLimitRemaining,
   statusLineUptime,
@@ -21,26 +22,20 @@ import {
   FolderIcon,
   RotateCwIcon,
   TimerIcon,
-  ZapIcon,
+  ClockIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { MessageResolver } from "../../i18n/messages";
 
-const EFFORT_BAR_HEIGHTS = ["h-1", "h-1.5", "h-2", "h-2.5", "h-3"];
+import { APP_VERSION } from "../../branding";
+import { statusEffortColor, statusUsedColor } from "./statusLineColors";
 
 function gaugeColor(
   percent: number,
   kind: "context" | "limit",
   projectedRemainingPercent?: number | null,
 ): string {
-  return {
-    error:
-      kind === "context"
-        ? "light-dark(var(--color-red-700), var(--color-red-400))"
-        : "var(--destructive)",
-    warning: "var(--warning-foreground)",
-    success: "var(--success-foreground)",
-  }[statusLineGaugeTone(percent, kind, projectedRemainingPercent)];
+  return statusUsedColor(statusLineGaugeUsedPercent(percent, kind, projectedRemainingPercent));
 }
 
 function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolver): string {
@@ -49,32 +44,9 @@ function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolv
   return left === null ? "" : resolve(msg("resets in {time}", { time: left }));
 }
 
-/** Effort as signal bars, one lit for low and all five for max. Other levels are written out. */
-function Effort(props: { readonly effort: string }) {
-  const level = statusLineEffortBars(props.effort);
-  if (level === 0) {
-    return <span className="font-normal text-2xs text-muted-foreground">{props.effort}</span>;
-  }
-  return (
-    <span
-      role="img"
-      aria-label={`${props.effort} effort`}
-      className="flex shrink-0 items-end gap-px"
-    >
-      {EFFORT_BAR_HEIGHTS.map((height, index) => (
-        <span
-          key={height}
-          className={`w-[3px] rounded-xs ${height} ${index < level ? "bg-foreground" : "bg-foreground/30"}`}
-        />
-      ))}
-    </span>
-  );
-}
-
-// At the error level the disc fills too, since a theme's error color can sit close to its accent.
 function Ring(props: {
   readonly percent: number;
-  readonly alarm: boolean;
+  readonly usedPercent: number;
   readonly projectedRemainingPercent?: number | null;
 }) {
   return (
@@ -83,8 +55,8 @@ function Ring(props: {
         cx="13"
         cy="13"
         r="10.5"
-        fill={props.alarm ? "currentColor" : "none"}
-        fillOpacity="0.3"
+        fill="currentColor"
+        fillOpacity={0.3 * (props.usedPercent / 100) ** 4}
         stroke="currentColor"
         strokeOpacity="0.22"
         strokeWidth="3"
@@ -133,7 +105,7 @@ function Dial(props: {
   readonly percent: number;
   readonly kind: "context" | "limit";
   readonly projectedRemainingPercent?: number | null;
-  readonly name: string;
+  readonly name: ReactNode;
   readonly detail: ReactNode;
   readonly label: string;
   readonly className?: string;
@@ -144,19 +116,21 @@ function Dial(props: {
       role="img"
       aria-label={props.label}
       className={`flex shrink-0 items-center gap-1.5 ${props.className ?? ""}`}
-      style={{ color: gaugeColor(percent, props.kind, props.projectedRemainingPercent) }}
+      style={{ color: gaugeColor(props.percent, props.kind, props.projectedRemainingPercent) }}
     >
       <Ring
         percent={percent}
         projectedRemainingPercent={props.projectedRemainingPercent ?? null}
-        alarm={
-          statusLineGaugeTone(percent, props.kind, props.projectedRemainingPercent) === "error"
-        }
+        usedPercent={statusLineGaugeUsedPercent(
+          props.percent,
+          props.kind,
+          props.projectedRemainingPercent,
+        )}
       />
-      <span className="grid @max-[20rem]/dials:hidden">
+      <span className="grid">
         <span className="font-medium text-2xs/3.5 text-foreground">{props.name}</span>
         {props.detail === null ? null : (
-          <span className="flex items-center gap-0.5 text-3xs/3 text-muted-foreground @max-[24rem]/dials:hidden [&_svg]:size-2.5">
+          <span className="flex items-center gap-0.5 text-3xs/3 text-muted-foreground [&_svg]:size-2.5">
             {props.detail}
           </span>
         )}
@@ -168,7 +142,7 @@ function Dial(props: {
 function LimitDial(props: {
   readonly limit: StatusLineLimit;
   readonly nowMs: number;
-  readonly name: string;
+  readonly name: ReactNode;
   readonly title: string;
   readonly className: string;
 }) {
@@ -195,7 +169,9 @@ function LimitDial(props: {
         left === null ? null : (
           <>
             <RotateCwIcon />
-            {left}
+            <span style={{ color: statusUsedColor(statusLineBurnRisk(props.limit, props.nowMs)) }}>
+              {left}
+            </span>
             {depletionRatioPercent === undefined ? null : (
               <span className="ms-0.5 border-s ps-1">{depletionRatioPercent}%</span>
             )}
@@ -224,11 +200,15 @@ function Stat(props: {
   );
 }
 
-/**
- * The status line as gauges in the top bar. What runs out (context and the usage limits) is a
- * dial; the rest are small icons. As the bar narrows the icons leave first, then the captions,
- * and the dials last.
- */
+function CompactLabel(props: { readonly label: string; readonly short: string }) {
+  return (
+    <>
+      <span className="@max-[58rem]/dials:hidden">{props.label}</span>
+      <span className="@min-[58rem]/dials:hidden">{props.short}</span>
+    </>
+  );
+}
+
 export function StatusDialStrip(props: {
   readonly stats: StatusLineStats;
   readonly createdAt: string | null;
@@ -238,41 +218,31 @@ export function StatusDialStrip(props: {
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
-  const hasDial = stats.contextPercent !== null || stats.fiveHour !== null || stats.weekly !== null;
+  const contextName = (
+    <CompactLabel
+      label={gt("context", { $context: "model context window" })}
+      short={gt("ctx", { $context: "short label for model context" })}
+    />
+  );
+  const cost = stats.cost;
+  const fastLabel =
+    stats.fastMode === null ? null : stats.fastMode ? gt("Fast mode on") : gt("Fast mode off");
   return (
     <div className="@container/dials">
-      <div className="flex items-center gap-3.5 overflow-hidden whitespace-nowrap tabular-nums">
-        {stats.modelName === null ? null : (
-          <span
-            // Beside dials the model goes when room is short; alone it stays, or nothing would.
-            className={`flex min-w-0 items-center gap-1.5 font-medium text-foreground ${hasDial ? "@max-[14rem]/dials:hidden" : ""}`}
-          >
-            <span className="max-w-40 truncate">{stats.modelName}</span>
-            {stats.effort === null ? null : <Effort effort={stats.effort} />}
-            {stats.fastMode ? (
-              <ZapIcon aria-label={gt("Fast mode")} className="size-3.5 shrink-0 fill-foreground" />
-            ) : null}
-          </span>
-        )}
+      <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap tabular-nums">
         {context === null ? null : stats.contextPercent === null ? (
-          // No known maximum, so no ring: the count stands in for it.
-          <Stat
-            label={gt("Context {context} tokens", { context })}
-            className="@max-[20rem]/dials:hidden"
-          >
-            <span className="font-medium text-foreground">
-              {gt("context", { $context: "model context window" })}
-            </span>
+          <Stat label={gt("Context {context} tokens", { context })} className="">
+            {contextName}
             {context}
           </Stat>
         ) : (
           <Dial
             percent={stats.contextPercent}
             kind="context"
-            name={gt("context", { $context: "model context window" })}
+            name={contextName}
             detail={context}
             label={gt("Context {percent}% used, {context} tokens", {
-              percent: stats.contextPercent,
+              percent: statusLineGaugePercent(stats.contextPercent),
               context,
             })}
           />
@@ -283,48 +253,96 @@ export function StatusDialStrip(props: {
             nowMs={nowMs}
             name="5h"
             title={gt("5-hour limit")}
-            className="@max-[4rem]/dials:hidden"
+            className={
+              stats.fableWeekly === null ? "@max-[10rem]/dials:hidden" : "@max-[15rem]/dials:hidden"
+            }
           />
         )}
         {stats.weekly === null ? null : (
           <LimitDial
             limit={stats.weekly}
             nowMs={nowMs}
-            name={gt("week", { $context: "weekly usage limit" })}
+            name={
+              <CompactLabel
+                label={gt("week", { $context: "weekly usage limit" })}
+                short={gt("wk", { $context: "short label for weekly usage" })}
+              />
+            }
             title={gt("Weekly limit")}
             className="@max-[6.5rem]/dials:hidden"
           />
         )}
+        {stats.fableWeekly === null ? null : (
+          <LimitDial
+            limit={stats.fableWeekly}
+            nowMs={nowMs}
+            name="Fable"
+            title={gt("Fable weekly limit")}
+            className="@max-[10rem]/dials:hidden"
+          />
+        )}
+        {cost === null ? null : (
+          <Stat
+            label={cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            className="@max-[14rem]/dials:hidden"
+          >
+            {cost.amount}
+            {cost.basis === "api" ? " API" : ""}
+          </Stat>
+        )}
         {uptime === null ? null : (
-          <>
-            <span aria-hidden className="h-4 w-px shrink-0 bg-border @max-[29rem]/dials:hidden" />
-            <Stat label={gt("Uptime {uptime}", { uptime })} className="@max-[29rem]/dials:hidden">
-              <TimerIcon />
-              {uptime}
-            </Stat>
-          </>
+          <Stat label={gt("Uptime {uptime}", { uptime })} className="@max-[17rem]/dials:hidden">
+            <TimerIcon />
+            {uptime}
+          </Stat>
         )}
         {stats.cachePercent === null ? null : (
           <Stat
-            label={gt("Cache hits {percent}%", { percent: stats.cachePercent })}
-            className="@max-[37rem]/dials:hidden"
+            label={gt("Cache hits {percent}%", { percent: Math.round(stats.cachePercent) })}
+            className="@max-[21rem]/dials:hidden"
           >
             <DatabaseIcon />
-            {stats.cachePercent}%
+            <span style={{ color: statusUsedColor(statusLineCacheRisk(stats.cachePercent)) }}>
+              {Math.round(stats.cachePercent)}%
+            </span>
           </Stat>
         )}
-        {stats.inputTokens === null ? null : (
+        {stats.inputTokens === null || stats.outputTokens === null ? null : (
           <Stat
             label={gt("{input} tokens in, {output} out", {
               input: stats.inputTokens,
-              output: stats.outputTokens ?? 0,
+              output: stats.outputTokens,
             })}
-            className="@max-[44rem]/dials:hidden"
+            className="@max-[27rem]/dials:hidden"
           >
             <ArrowDownIcon />
             {formatStatusLineTokens(stats.inputTokens)}
             <ArrowUpIcon />
-            {formatStatusLineTokens(stats.outputTokens ?? 0)}
+            {formatStatusLineTokens(stats.outputTokens)}
+          </Stat>
+        )}
+        {stats.apiTime === null ? null : (
+          <Stat label={gt("API time")} className="@max-[31rem]/dials:hidden">
+            <ClockIcon />
+            {stats.apiTime}
+          </Stat>
+        )}
+        {fastLabel === null ? null : (
+          <Stat label={fastLabel} className="@max-[35rem]/dials:hidden">
+            {fastLabel}
+          </Stat>
+        )}
+        {stats.outputStyle === null ? null : (
+          <Stat label={gt("Output style")} className="@max-[42rem]/dials:hidden">
+            {stats.outputStyle}
+          </Stat>
+        )}
+        <Stat label={gt("HomuCode version")} className="@max-[48rem]/dials:hidden">
+          v{APP_VERSION}
+        </Stat>
+        {stats.version === null ? null : (
+          <Stat label={gt("Provider version")} className="@max-[55rem]/dials:hidden">
+            v{stats.version}
           </Stat>
         )}
       </div>
@@ -340,6 +358,7 @@ function Fact(props: {
     readonly projectedRemainingPercent?: number | null;
   };
   readonly dimmed?: boolean;
+  readonly note?: ReactNode;
   readonly details?: ReadonlyArray<string>;
   readonly children: ReactNode;
 }) {
@@ -365,6 +384,7 @@ function Fact(props: {
           />
         </span>
       )}
+      {props.note === undefined ? null : <span className="text-2xs">{props.note}</span>}
       {props.details?.map((detail) => (
         <span key={detail} className="text-2xs break-words text-muted-foreground tabular-nums">
           {detail}
@@ -387,8 +407,14 @@ function LimitFact(props: {
       name={props.name}
       meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
+      note={
+        note === "" ? undefined : (
+          <span style={{ color: statusUsedColor(statusLineBurnRisk(props.limit, props.nowMs)) }}>
+            {note}
+          </span>
+        )
+      }
       details={[
-        ...(note === "" ? [] : [note]),
         ...(projectedRemainingPercent === null
           ? []
           : [
@@ -417,7 +443,6 @@ export function StatusDialCard(props: {
   const gt = useGT();
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
-  const model = [stats.modelName, stats.effort, stats.fastMode ? "fast" : null].filter(Boolean);
   return (
     <div className="grid gap-3 tabular-nums">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))] gap-x-6 gap-y-3">
@@ -428,7 +453,9 @@ export function StatusDialCard(props: {
               ? {}
               : { meter: { percent: stats.contextPercent, kind: "context" } })}
           >
-            {stats.contextPercent === null ? null : `${stats.contextPercent}% · `}
+            {stats.contextPercent === null
+              ? null
+              : `${statusLineGaugePercent(stats.contextPercent)}% · `}
             {formatStatusLineTokens(stats.contextTokens)}
             {stats.contextMaxTokens === null
               ? null
@@ -441,32 +468,67 @@ export function StatusDialCard(props: {
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
         )}
-        {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}
-        {stats.inputTokens === null ? null : (
-          <Fact name={gt("Tokens")}>
-            {stats.cachePercent === null
-              ? gt("{input} in · {output} out", {
-                  input: formatStatusLineTokens(stats.inputTokens),
-                  output: formatStatusLineTokens(stats.outputTokens ?? 0),
-                })
-              : gt("{input} in · {output} out · {percent}% cached", {
-                  input: formatStatusLineTokens(stats.inputTokens),
-                  output: formatStatusLineTokens(stats.outputTokens ?? 0),
-                  percent: stats.cachePercent,
-                })}
+        {stats.fableWeekly === null ? null : (
+          <LimitFact name={gt("Fable weekly limit")} limit={stats.fableWeekly} nowMs={nowMs} />
+        )}
+        {stats.cost === null ? null : (
+          <Fact
+            name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            details={[
+              gt("Recorded main-agent usage for the current provider thread."),
+              ...(stats.cost.partial ? [gt("Some turns could not be priced in full.")] : []),
+            ]}
+          >
+            {stats.cost.amount}
           </Fact>
         )}
-        {model.length === 0 ? null : <Fact name={gt("Model")}>{model.join(" · ")}</Fact>}
-      </div>
-      {stats.cwd === null && stats.version === null ? null : (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-2 text-2xs text-muted-foreground">
-          {stats.cwd === null ? null : (
-            <span className="flex min-w-0 items-center gap-1">
-              <FolderIcon className="size-3 shrink-0" />
-              <span className="break-all">{stats.cwd}</span>
+        {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}
+        {stats.cachePercent === null ? null : (
+          <Fact name={gt("Cache hits")}>
+            <span style={{ color: statusUsedColor(statusLineCacheRisk(stats.cachePercent)) }}>
+              {Math.round(stats.cachePercent)}%
             </span>
-          )}
-          {stats.version === null ? null : <span>version {stats.version}</span>}
+          </Fact>
+        )}
+        {stats.inputTokens === null || stats.outputTokens === null ? null : (
+          <Fact name={gt("Tokens")}>
+            {gt("{input} in · {output} out", {
+              input: formatStatusLineTokens(stats.inputTokens),
+              output: formatStatusLineTokens(stats.outputTokens),
+            })}
+          </Fact>
+        )}
+        {stats.apiTime === null ? null : <Fact name={gt("API time")}>{stats.apiTime}</Fact>}
+        {stats.fastMode === null ? null : (
+          <Fact name={gt("Fast mode")}>
+            {stats.fastMode
+              ? gt("On", { $context: "option state" })
+              : gt("Off", { $context: "option state" })}
+          </Fact>
+        )}
+        {stats.outputStyle === null ? null : (
+          <Fact name={gt("Output style")}>{stats.outputStyle}</Fact>
+        )}
+        {stats.modelName === null ? null : (
+          <Fact name={gt("Model")}>
+            {stats.modelName}
+            {stats.effort === null ? null : (
+              <>
+                {" "}
+                <span style={{ color: statusEffortColor(stats.effort) }}>{stats.effort}</span>
+              </>
+            )}
+          </Fact>
+        )}
+        <Fact name={gt("HomuCode version")}>{APP_VERSION}</Fact>
+        {stats.version === null ? null : <Fact name={gt("Provider version")}>{stats.version}</Fact>}
+      </div>
+      {stats.cwd === null ? null : (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-2 text-2xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1">
+            <FolderIcon className="size-3 shrink-0" />
+            <span className="break-all">{stats.cwd}</span>
+          </span>
         </div>
       )}
     </div>

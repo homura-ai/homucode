@@ -14,7 +14,13 @@ import {
   stampStatusLineInput,
   statusLineColorRole,
   statusLineModelName,
-  statusLineGaugeTone,
+  fitStatusLineItems,
+  statusLineBurnRisk,
+  statusLineCacheRisk,
+  statusLineColorMix,
+  statusLineDisplayCost,
+  statusLineGaugeUsedPercent,
+  parseStatusLineBurnTau,
   reserveStatusLineText,
   splitStatusLineItems,
   type StatusLineInputSource,
@@ -446,6 +452,7 @@ describe("buildStatusLineInput", () => {
         resetsAtMs: Date.parse(reset),
       },
       weekly: { remainingPercent: 40, resetsAtMs: null },
+      fableWeekly: { remainingPercent: 10, resetsAtMs: null },
     });
     expect(buildStatusLineInput(routed).rate_limits).toEqual({
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
@@ -624,14 +631,14 @@ describe("buildStatusLineInput", () => {
   });
 
   it.each([
-    [0, 150, 100, 100, "success"],
-    [25.1, 150, 75, 50, "warning"],
-    [30, 225, 70, -20, "error"],
-    [44, 300, 56, null, "success"],
-    [55, 0, 45, null, "warning"],
+    [0, 150, 100, 100, 0],
+    [25.1, 150, 75, 50, 50],
+    [30, 225, 70, -20, 100],
+    [44, 300, 56, null, 44],
+    [55, 0, 45, null, 55],
   ] as const)(
     "uses %s%% spent with %s minutes to reset for the remaining dial and its color",
-    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent, tone) => {
+    (usedPercent, minutesToReset, remainingPercent, projectedRemainingPercent, colorPosition) => {
       const provider = source.providers[0]!;
       const stats = buildStatusLineStats({
         ...source,
@@ -657,7 +664,9 @@ describe("buildStatusLineInput", () => {
         ],
       });
       expect(stats.fiveHour).toMatchObject({ remainingPercent, projectedRemainingPercent });
-      expect(statusLineGaugeTone(remainingPercent, "limit", projectedRemainingPercent)).toBe(tone);
+      expect(statusLineGaugeUsedPercent(remainingPercent, "limit", projectedRemainingPercent)).toBe(
+        colorPosition,
+      );
     },
   );
 
@@ -702,14 +711,45 @@ describe("buildStatusLineInput", () => {
     },
   );
 
+  it("keeps Claude's Fable weekly allowance separate from the main window and script input", () => {
+    const provider = source.providers[0]!;
+    const limits = provider.usageLimits!;
+    const fable = {
+      id: "seven_day_fable",
+      kind: "weekly" as const,
+      label: "Weekly · Fable",
+      usedPercent: 80,
+    };
+    const withFable = {
+      ...source,
+      providers: [{ ...provider, usageLimits: { ...limits, windows: [fable, ...limits.windows] } }],
+    };
+    expect(buildStatusLineStats(withFable)).toMatchObject({
+      weekly: { remainingPercent: 57 },
+      fableWeekly: { remainingPercent: 20 },
+    });
+    const onlyFable = {
+      ...source,
+      providers: [{ ...provider, usageLimits: { ...limits, windows: [fable] } }],
+    };
+    expect(buildStatusLineStats(onlyFable)).toMatchObject({
+      weekly: null,
+      fableWeekly: { remainingPercent: 20 },
+    });
+    expect(buildStatusLineInput(onlyFable)).not.toHaveProperty("rate_limits");
+  });
+
   it("gives a client the same facts to draw itself", () => {
     expect(buildStatusLineStats(source)).toEqual({
       modelName: "Opus 5.5",
       effort: "high",
       fastMode: false,
       version: "2.1.311",
+      cost: null,
+      apiTime: null,
+      outputStyle: null,
       cwd: "/home/user/code",
-      contextPercent: 34,
+      contextPercent: 34.1,
       contextTokens: 341_000,
       contextMaxTokens: 1_000_000,
       fiveHour: {
@@ -718,6 +758,7 @@ describe("buildStatusLineInput", () => {
         resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z"),
       },
       weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
+      fableWeekly: { remainingPercent: 10, projectedRemainingPercent: null, resetsAtMs: null },
       cachePercent: 99,
       inputTokens: 338_000,
       outputTokens: 21_400,
@@ -758,5 +799,100 @@ describe("statusLineModelName", () => {
     ["claude-fable-5-2", "fable 5 2"],
   ])("%s becomes %s", (name, expected) => {
     expect(statusLineModelName(name)).toBe(expected);
+  });
+});
+
+describe("status line presentation", () => {
+  it("interpolates usage colors and gives cache misses their own scale", () => {
+    const mix = (from: string, to: string, amount: number) => [from, to, amount].join(":");
+    const colors = ["green", "yellow", "red"] as const;
+    expect(statusLineColorMix(24.5, colors, mix)).toBe("green:yellow:0.49");
+    expect(statusLineColorMix(50, colors, mix)).toBe("yellow");
+    expect(statusLineColorMix(75, colors, mix)).toBe("yellow:red:0.5");
+    expect([100, 99, 98, 94, 90, 70].map(statusLineCacheRisk)).toEqual([0, 25, 50, 75, 100, 100]);
+  });
+
+  it.each([
+    [0, 0],
+    [0.025, 0],
+    [0.05, 50],
+    [0.1, 75],
+  ] as const)("colors a burn rate of %s as risk %s", (burnRatePercentPerSecond, risk) => {
+    const limit = {
+      remainingPercent: 50,
+      projectedRemainingPercent: null,
+      resetsAtMs: 1_000_000,
+      burnRatePercentPerSecond,
+    };
+    expect(statusLineBurnRisk(limit, 0)).toBe(risk);
+    expect(statusLineBurnRisk(limit, 1_000_000)).toBe(0);
+    expect(statusLineBurnRisk({ ...limit, remainingPercent: 0 }, 0)).toBe(100);
+  });
+
+  it("shortens labels before it drops 5h and retains weekly first", () => {
+    const core = { full: 100, compact: 85 };
+    const items = [
+      { id: "weekly", full: 55, compact: 45 },
+      { id: "fiveHour", full: 50 },
+      { id: "cost", full: 40 },
+    ] as const;
+    expect(fitStatusLineItems(245, core, items)).toEqual({
+      compact: false,
+      visible: new Set(["weekly", "fiveHour", "cost"]),
+    });
+    expect(fitStatusLineItems(220, core, items)).toEqual({
+      compact: true,
+      visible: new Set(["weekly", "fiveHour", "cost"]),
+    });
+    expect(fitStatusLineItems(175, core, items)).toEqual({
+      compact: true,
+      visible: new Set(["weekly"]),
+    });
+    expect([
+      parseStatusLineBurnTau(""),
+      parseStatusLineBurnTau(" 12.5 "),
+      parseStatusLineBurnTau("0"),
+    ]).toEqual([null, 12.5, null]);
+  });
+
+  it("uses known subscription prices, labels API prices, and hides missing costs", () => {
+    const accounting = {
+      apiCostUsd: 10,
+      subscriptionCostUsd: 0.32,
+      partial: false,
+      apiDurationMs: 100,
+      outputStyle: "default",
+    };
+    expect(statusLineDisplayCost(accounting, false)).toEqual({
+      amount: "$0.32",
+      basis: "subscription",
+      partial: false,
+    });
+    expect(statusLineDisplayCost(accounting, true)).toEqual({
+      amount: "$10.00",
+      basis: "api",
+      partial: false,
+    });
+    expect(statusLineDisplayCost({ ...accounting, subscriptionCostUsd: null }, false)?.basis).toBe(
+      "api",
+    );
+    expect(
+      statusLineDisplayCost({ ...accounting, apiCostUsd: null, subscriptionCostUsd: null }, false),
+    ).toBeNull();
+
+    const input = buildStatusLineInput({
+      threadId: "thread",
+      cwd: null,
+      modelSelection: null,
+      providers: [],
+      usageLimitSources: [],
+      contextWindow: null,
+      nowMs: 0,
+      accounting,
+    });
+    expect(stampStatusLineInput(input, "1970-01-01T00:00:00.000Z", 1000)).toMatchObject({
+      cost: { total_cost_usd: 10, total_api_duration_ms: 100, total_duration_ms: 1000 },
+      output_style: { name: "default" },
+    });
   });
 });

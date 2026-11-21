@@ -946,6 +946,27 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["statusline weekly quota reset projected pace"],
   },
   {
+    id: "status-line-use-api-price",
+    title: msg("Use API prices for thread cost"),
+    to: "/settings/agent-behavior",
+    scope: "environment-defaults",
+    searchTerms: ["statusline list price subscription cost"],
+  },
+  {
+    id: "status-line-session-burn-rate",
+    title: msg("5-hour burn-rate smoothing"),
+    to: "/settings/agent-behavior",
+    scope: "environment-defaults",
+    searchTerms: ["statusline smoothing countdown reset risk"],
+  },
+  {
+    id: "status-line-weekly-burn-rate",
+    title: msg("Weekly burn-rate smoothing"),
+    to: "/settings/agent-behavior",
+    scope: "environment-defaults",
+    searchTerms: ["statusline smoothing countdown reset risk"],
+  },
+  {
     id: "status-line-command",
     title: msg("Status line command"),
     to: "/settings/agent-behavior",

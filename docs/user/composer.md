@@ -148,27 +148,36 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Status line
 
-Enable **Settings → HomuCode → Agent behavior → Status line** to show the thread's status in the top bar beside
-its title. The context dial shows the percentage used. The 5-hour and weekly dials show
-the percentage of quota remaining. A tick marks what will remain at the next reset if
-usage continues at the same pace. The dial's color follows that estimate when timing is
-available. Beside the dials are the model, its effort as
-signal bars, and small icons for uptime, cache hits and tokens in and out. When the top
-bar is short of room, the small icons go first, then the captions beside the dials.
-The clock stays at the right of the thread header, even when the status line is off.
-Hover the status line, or focus it with the keyboard, to see every value by name,
-with the folder and version. The expanded view also lists models and their reported limits
-for the thread's environment. To hide that list, turn off **Show all models in status line
-details** under **Settings → HomuCode → Agent behavior → Extra features**.
+Enable **Settings → HomuCode → Agent behavior → Status line** to show context use and quota
+in the top bar. The context dial shows the percentage used and the token count. The 5-hour
+and weekly dials show the percentage remaining. Claude shows a separate Fable weekly dial when it reports that allowance. A tick marks the projected remainder at
+reset, and the dial takes its color from that projection when timing is available. In a
+narrow bar, labels shorten and the weekly limit stays visible longer than the 5-hour limit.
+On desktop and web, the model picker colors the reasoning effort. On mobile, the status
+line shows the model and its effort.
 
-For providers routed through a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub),
-the status line shows the hub's pooled usage. Each percentage uses the accounts that
-reported a current reading for that window, and the countdown shows the next reported reset.
+Thread cost covers recorded main-agent usage in the active provider thread. It uses the
+API price and estimates a subscription share for supported plans. Claude Ultra estimates
+use 3.2% for non-Fable models and 5.7% for Fable. Turn on **Use API prices for thread cost**
+to always see API prices. A ≥ means some turns could only be partially priced or had no
+pricing data. Claude also reports API time and output style on completed turns.
 
-Enable **Weekly depletion ratio** in the Status line settings to compare time until the
-weekly reset with the projected time until quota runs out. Above 100% means quota is
-projected to run out first. A negative projected quota shows how far past the limit the
-current pace would take you before reset.
+The reset countdown takes its color from the recent rate of usage. Green means at least
+twice as much time to run out as to reset, yellow means on pace to run out at reset, and
+red means near exhaustion. Hover or focus the status line on desktop and web, or tap it on
+mobile, to see the details and change **5-hour burn-rate smoothing** or **Weekly burn-rate
+smoothing**. The same controls are in Settings. Longer durations make the colors less
+sensitive to recent usage. The defaults are 30 minutes and one day.
+
+For a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub), the percentages pool
+accounts with a current reading, and the countdown shows the next reported reset.
+**Weekly depletion ratio** compares time until reset with projected time until the quota
+runs out. Above 100% means quota is projected to run out first. A negative projected
+remainder shows how far past the limit the current pace would take you.
+
+Turn off **Show all models in status line details** under **Settings → HomuCode → Agent
+behavior → Extra features** to hide the environment's model and quota list on desktop and
+web.
 
 To draw your own, set **Status line command** to any shell command: it receives Claude
 Code's status line JSON on stdin and runs in the thread's folder, so a script written for

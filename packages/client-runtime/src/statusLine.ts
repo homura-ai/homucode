@@ -3,6 +3,7 @@ import type {
   ServerProvider,
   ServerProviderModel,
   ServerProviderUsageWindow,
+  StatusLineAccounting,
   UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import {
@@ -32,6 +33,8 @@ export interface StatusLineInputSource {
   /** Usage limits are read as of this time. */
   readonly nowMs: number;
   readonly showWeeklyDepletionRatio?: boolean;
+  readonly accounting?: StatusLineAccounting | null;
+  readonly useApiPrice?: boolean;
 }
 
 export type StatusLineUsageSource = Pick<
@@ -52,6 +55,16 @@ function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWind
     (window.kind === "session" ||
       (window.kind === "weekly" &&
         (provider.driver !== "claudeAgent" || window.id === "seven_day" || window.id === "weekly")))
+  );
+}
+
+function fableWeeklyWindow(window: ServerProviderUsageWindow): boolean {
+  return (
+    window.kind === "weekly" &&
+    (window.id === "seven_day_fable" ||
+      (window.modelIds !== undefined &&
+        window.modelIds.length > 0 &&
+        window.modelIds.every((model) => /(?:^|[-/])fable(?:-|$)/i.test(model))))
   );
 }
 
@@ -85,7 +98,9 @@ function hubUsageWindows(
               windows: account.usageLimits.windows.filter(
                 (window) =>
                   (window.resetsAt === undefined || Date.parse(window.resetsAt) > now) &&
-                  (includeAll || summaryWindow(provider, window)),
+                  (includeAll ||
+                    summaryWindow(provider, window) ||
+                    (provider.driver === "claudeAgent" && fableWeeklyWindow(window))),
               ),
             },
           },
@@ -107,6 +122,11 @@ function hubUsageWindows(
         projectedUsedPercent: window.projectedUsedPercent,
         depletionRatioPercent: window.depletionRatioPercent,
         ...(resetsAt === undefined ? {} : { resetsAt }),
+        ...(window.burnRatePercentPerSecond === undefined
+          ? {}
+          : {
+              burnRatePercentPerSecond: window.burnRatePercentPerSecond,
+            }),
       };
     }) ?? []
   );
@@ -144,8 +164,7 @@ function providerUsageWindows(
         !hubWindows.some(
           (hub) =>
             hub.kind === window.kind &&
-            (!includeAll ||
-              hub.id === window.id ||
+            (hub.id === window.id ||
               (summaryWindow(provider, hub) && summaryWindow(provider, window))),
         ),
     ),
@@ -180,7 +199,7 @@ function findUsageWindow(
   windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
 ) {
-  const matching = windows.filter((window) => window.kind === kind);
+  const matching = windows.filter((window) => window.kind === kind && !fableWeeklyWindow(window));
   return matching.find((candidate) => candidate.modelIds === undefined) ?? matching[0];
 }
 
@@ -225,6 +244,22 @@ function effortLevel(
   return undefined;
 }
 
+function statusLineFastMode(
+  selection: ModelSelection | null,
+  model: ServerProviderModel | undefined,
+): boolean | null {
+  const tier = getModelSelectionStringOptionValue(selection, "serviceTier");
+  if (tier !== undefined) return ["fast", "priority", "ultrafast"].includes(tier);
+  return (
+    getModelSelectionBooleanOptionValue(selection, "fastMode") ??
+    (model?.capabilities?.optionDescriptors?.some(
+      (option) => option.id === "fastMode" || option.id === "serviceTier",
+    )
+      ? false
+      : null)
+  );
+}
+
 function selectedModel(source: Pick<StatusLineInputSource, "modelSelection" | "providers">) {
   const selection = source.modelSelection;
   const provider =
@@ -248,6 +283,30 @@ export interface StatusLineLimit {
   readonly projectedRemainingPercent: number | null;
   readonly depletionRatioPercent?: number;
   readonly resetsAtMs: number | null;
+  readonly usedPercent?: number;
+  readonly burnRatePercentPerSecond?: number;
+}
+
+interface StatusLineDisplayCost {
+  readonly amount: string;
+  readonly basis: "api" | "subscription";
+  readonly partial: boolean;
+}
+
+export function statusLineDisplayCost(
+  accounting: StatusLineAccounting | null | undefined,
+  useApiPrice: boolean,
+): StatusLineDisplayCost | null {
+  if (accounting == null) return null;
+  const subscription = !useApiPrice && accounting.subscriptionCostUsd !== null;
+  const cost = subscription ? accounting.subscriptionCostUsd : accounting.apiCostUsd;
+  if (cost === null || !Number.isFinite(cost) || cost < 0) return null;
+  return {
+    amount:
+      cost > 0 && cost < 0.01 ? "<$0.01" : `${accounting.partial ? "≥" : ""}$${cost.toFixed(2)}`,
+    basis: subscription ? "subscription" : "api",
+    partial: accounting.partial,
+  };
 }
 
 /** What a client draws its own status line from, when no custom command draws it. */
@@ -256,12 +315,16 @@ export interface StatusLineStats {
   readonly effort: string | null;
   readonly fastMode: boolean | null;
   readonly version: string | null;
+  readonly cost: StatusLineDisplayCost | null;
+  readonly apiTime: string | null;
+  readonly outputStyle: string | null;
   readonly cwd: string | null;
   readonly contextPercent: number | null;
   readonly contextTokens: number | null;
   readonly contextMaxTokens: number | null;
   readonly fiveHour: StatusLineLimit | null;
   readonly weekly: StatusLineLimit | null;
+  readonly fableWeekly: StatusLineLimit | null;
   readonly cachePercent: number | null;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
@@ -282,6 +345,12 @@ function limitFromWindow(
     projectedRemainingPercent: projected === null ? null : Math.round(100 - projected),
     ...(depletionRatio === null ? {} : { depletionRatioPercent: depletionRatio }),
     resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
+    ...(window.burnRatePercentPerSecond === undefined
+      ? {}
+      : {
+          usedPercent: window.usedPercent,
+          burnRatePercentPerSecond: window.burnRatePercentPerSecond,
+        }),
   };
 }
 
@@ -302,49 +371,148 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
   const windows = usageWindows(source);
   const inputTokens = context?.inputTokens ?? null;
   const cachedInputTokens = context?.cachedInputTokens ?? null;
+  const fable = provider?.driver === "claudeAgent" ? windows.find(fableWeeklyWindow) : undefined;
   return {
     modelName: statusLineInputModelName(source),
     effort: effortLevel(selection, model) ?? null,
-    fastMode: getModelSelectionBooleanOptionValue(selection, "fastMode") ?? null,
+    fastMode: statusLineFastMode(selection, model),
     version: provider?.version || null,
+    cost: statusLineDisplayCost(source.accounting, source.useApiPrice === true),
+    apiTime:
+      source.accounting?.apiDurationMs == null
+        ? null
+        : formatStatusLineApiTime(source.accounting.apiDurationMs),
+    outputStyle: source.accounting?.outputStyle ?? null,
     cwd: source.cwd,
     contextPercent:
-      context === null || context.usedPercentage === null
-        ? null
-        : Math.round(context.usedPercentage),
+      context === null || context.usedPercentage === null ? null : context.usedPercentage,
     contextTokens: context?.usedTokens ?? null,
     contextMaxTokens: context?.maxTokens ?? null,
     fiveHour: statusLineLimit(windows, "session", source.nowMs),
     weekly: statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio),
+    fableWeekly: fable === undefined ? null : limitFromWindow(fable, source.nowMs),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
-        ? Math.round(Math.min(1, cachedInputTokens / inputTokens) * 100)
+        ? 100 * Math.min(1, cachedInputTokens / inputTokens)
         : null,
     inputTokens,
     outputTokens: context?.outputTokens ?? null,
   };
 }
 
-const STATUS_LINE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+export const STATUS_LINE_EFFORT_COLORS = [
+  ["#6322b6", "#be9dff"],
+  ["#8835a0", "#dc9af5"],
+  ["#a60068", "#ff83c7"],
+  ["#ba124a", "#ff769d"],
+  ["#bd171c", "#ff7775"],
+] as const;
 
-export function statusLineEffortBars(effort: string): number {
-  return effort.startsWith("ultra") ? 5 : STATUS_LINE_EFFORT_LEVELS.indexOf(effort) + 1;
+export function statusLineEffortPosition(effort: string): number | undefined {
+  switch (effort.toLowerCase()) {
+    case "minimal":
+    case "low":
+      return 0;
+    case "medium":
+      return 25;
+    case "high":
+      return 50;
+    case "xhigh":
+    case "extra high":
+    case "extra-high":
+    case "extra_high":
+      return 75;
+    case "max":
+    case "ultra":
+    case "ultrathink":
+    case "ultracode":
+      return 100;
+    default:
+      return undefined;
+  }
+}
+
+function clampPercent(percent: number): number {
+  return Math.max(0, Math.min(100, percent));
 }
 
 export function statusLineGaugePercent(percent: number): number {
-  return Math.max(0, Math.min(100, Math.round(percent)));
+  return Math.round(clampPercent(percent));
 }
 
-export function statusLineGaugeTone(
+export function statusLineGaugeUsedPercent(
   percent: number,
   kind: "context" | "limit",
   projectedRemainingPercent?: number | null,
-): "success" | "warning" | "error" {
-  // A long context window is fine half full; a usage limit half spent is worth a look.
-  const [warning, error] = kind === "context" ? [70, 90] : [50, 80];
-  const used = kind === "context" ? percent : 100 - (projectedRemainingPercent ?? percent);
-  if (used >= error) return "error";
-  return used >= warning ? "warning" : "success";
+): number {
+  return clampPercent(kind === "context" ? percent : 100 - (projectedRemainingPercent ?? percent));
+}
+
+// A 2% miss is already yellow; a 10% miss is red.
+export function statusLineCacheRisk(percent: number): number {
+  const miss = Math.max(0, 100 - percent);
+  return clampPercent(miss <= 2 ? 25 * miss : 50 + (50 * (miss - 2)) / 8);
+}
+
+export function statusLineBurnRisk(limit: StatusLineLimit, nowMs: number): number {
+  const used = limit.usedPercent ?? 100 - limit.remainingPercent;
+  if (used >= 100) return 100;
+  const left = ((limit.resetsAtMs ?? nowMs) - nowMs) / 1_000;
+  const rate = limit.burnRatePercentPerSecond ?? 0;
+  if (rate <= 0 || left <= 0) return 0;
+  return clampPercent(100 - (50 * (100 - used)) / rate / left);
+}
+
+export function statusLineColorMix(
+  percent: number,
+  colors: readonly [string, string, ...string[]],
+  mix: (from: string, to: string, amount: number) => string,
+): string {
+  const position = (clampPercent(percent) / 100) * (colors.length - 1);
+  const index = Math.floor(position);
+  const from = colors[index]!;
+  const to = colors[index + 1];
+  return to === undefined || position === index ? from : mix(from, to, position - index);
+}
+
+export function statusLineNativeColorMix(from: string, to: string, amount: number): string {
+  const channels = (color: string) => {
+    const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1];
+    if (hex) return [0, 2, 4].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+    return /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color)?.slice(1).map(Number);
+  };
+  const start = channels(from);
+  const end = channels(to);
+  if (!start || !end) return from;
+  return `rgb(${start.map((channel, index) => Math.round(channel + (end[index]! - channel) * amount)).join(", ")})`;
+}
+
+export function fitStatusLineItems<Item extends string>(
+  width: number,
+  core: { readonly full: number; readonly compact: number },
+  items: ReadonlyArray<{ readonly id: Item; readonly full: number; readonly compact?: number }>,
+): { readonly compact: boolean; readonly visible: ReadonlySet<Item> } {
+  const compact = core.full + items.reduce((sum, item) => sum + item.full, 0) > width;
+  let available = width - (compact ? core.compact : core.full);
+  const visible = new Set<Item>();
+  for (const item of items) {
+    const itemWidth = compact ? (item.compact ?? item.full) : item.full;
+    if (itemWidth > available) break;
+    visible.add(item.id);
+    available -= itemWidth;
+  }
+  return { compact, visible };
+}
+
+export const STATUS_LINE_BURN_TAU_PRESETS = {
+  statusLineSessionBurnTauMinutes: [15, 30, 60, 120],
+  statusLineWeeklyBurnTauMinutes: [360, 720, 1440, 2880],
+} as const;
+export type StatusLineBurnTauKey = keyof typeof STATUS_LINE_BURN_TAU_PRESETS;
+
+export function parseStatusLineBurnTau(input: string): number | null {
+  const minutes = Number(input.trim());
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
 export function statusLineGaugeTickRotation(percent: number): number {
@@ -384,6 +552,10 @@ export function formatStatusLineSpan(ms: number): string {
   return `${minutes}m`;
 }
 
+function formatStatusLineApiTime(ms: number): string {
+  return ms < 60_000 ? `${Math.floor(ms / 1000)}s` : formatStatusLineSpan(ms);
+}
+
 /** Claude Code's status line JSON, so scripts written for it run unchanged. Unknown fields are left out. */
 export function buildStatusLineInput(source: StatusLineInputSource): Record<string, unknown> {
   const { selection, provider, model } = selectedModel(source);
@@ -392,6 +564,15 @@ export function buildStatusLineInput(source: StatusLineInputSource): Record<stri
   const fastMode = getModelSelectionBooleanOptionValue(selection, "fastMode");
   const context = source.contextWindow;
   const windows = usageWindows(source);
+  const accounting = source.accounting;
+  const cost = {
+    ...(accounting?.apiCostUsd == null || accounting.partial
+      ? {}
+      : { total_cost_usd: accounting.apiCostUsd }),
+    ...(accounting?.apiDurationMs == null
+      ? {}
+      : { total_api_duration_ms: accounting.apiDurationMs }),
+  };
   const fiveHour = rateLimit(windows, "session");
   const sevenDay = rateLimit(windows, "weekly");
   const inputTokens = context?.inputTokens ?? null;
@@ -399,6 +580,8 @@ export function buildStatusLineInput(source: StatusLineInputSource): Record<stri
 
   return {
     session_id: source.threadId,
+    ...(Object.keys(cost).length > 0 ? { cost } : {}),
+    ...(accounting?.outputStyle == null ? {} : { output_style: { name: accounting.outputStyle } }),
     ...(source.cwd === null
       ? {}
       : { cwd: source.cwd, workspace: { current_dir: source.cwd, project_dir: source.cwd } }),
@@ -444,7 +627,13 @@ export function stampStatusLineInput(
 ): Record<string, unknown> {
   const started = createdAt === null ? Number.NaN : Date.parse(createdAt);
   return Number.isFinite(started)
-    ? { ...input, cost: { total_duration_ms: Math.max(0, nowMs - started) } }
+    ? {
+        ...input,
+        cost: {
+          ...(typeof input.cost === "object" && input.cost !== null ? input.cost : {}),
+          total_duration_ms: Math.max(0, nowMs - started),
+        },
+      }
     : input;
 }
 

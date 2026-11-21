@@ -11,6 +11,7 @@ import { msg, T, useGT, useMessages } from "gt-react";
 import { CheckIcon, ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
 
+import { statusEffortColor } from "./statusLineColors";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import {
@@ -113,15 +114,13 @@ export function describeComposerEffort(
     columnControls(visibility.selectDescriptors, visibility.booleanDescriptors).effort
       ?.descriptor ?? null;
   const ultrathink = visibility.ultrathinkPromptControlled && reasoning === primary;
-  const glyph =
+  const effort =
     reasoning?.type === "select"
-      ? resolveEffortGlyph(
-          reasoning,
-          ultrathink
-            ? "ultrathink"
-            : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection),
-        )
-      : null;
+      ? ultrathink
+        ? "ultrathink"
+        : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection)
+      : undefined;
+  const glyph = reasoning?.type === "select" ? resolveEffortGlyph(reasoning, effort ?? null) : null;
   // Workflow levels such as Ultracode always show their name; the setting names every level.
   const word = glyph
     ? (glyph.special ?? (effortDisplay === "label" ? glyph.label : null))
@@ -160,7 +159,11 @@ export function describeComposerEffort(
         )}
       >
         {word ? (
-          <span data-composer-control-label className="max-w-24 truncate">
+          <span
+            data-composer-control-label
+            className="max-w-24 truncate"
+            style={{ color: effort == null ? undefined : statusEffortColor(effort) }}
+          >
             {word}
           </span>
         ) : glyph ? (
@@ -191,6 +194,7 @@ const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs
 
 function ColumnRow(props: {
   label: string;
+  color?: string | undefined;
   /** Shown on hover; the column is too narrow to print it under the label. */
   description?: string | undefined;
   selected: boolean;
@@ -216,7 +220,9 @@ function ColumnRow(props: {
   } as const;
   const content = (
     <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
+      <span className="min-w-0 flex-1 truncate" style={{ color: props.color }}>
+        {props.label}
+      </span>
       {props.selected ? (
         <>
           {props.isDefault ? (
@@ -355,6 +361,7 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
         <ColumnRow
           key={option.id}
           label={option.label}
+          color={statusEffortColor(option.id)}
           selected={option.id === value}
           tabStop={shown ? option.id === value : index === 0}
           description={option.description}

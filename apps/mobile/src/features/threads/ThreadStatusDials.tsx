@@ -1,16 +1,23 @@
 import IconDatabase from "@tabler/icons-react-native/IconDatabase";
 import {
+  fitStatusLineItems,
   formatStatusLineTokens,
-  statusLineEffortBars,
+  STATUS_LINE_EFFORT_COLORS,
+  statusLineBurnRisk,
+  statusLineCacheRisk,
+  statusLineColorMix,
+  statusLineEffortPosition,
+  statusLineNativeColorMix,
+  statusLineGaugeUsedPercent,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
-  statusLineGaugeTone,
   statusLineLimitEnded,
   statusLineLimitRemaining,
   statusLineUptime,
   type StatusLineLimit,
   type StatusLineStats,
 } from "@t3tools/client-runtime/status-line";
+import Constants from "expo-constants";
 import { useGT } from "gt-react-native";
 import { useContext, type ReactNode } from "react";
 import { View } from "react-native";
@@ -24,27 +31,32 @@ type GaugeKind = "context" | "limit";
 const DIAL_SIZE = 26;
 const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-const EFFORT_HEIGHTS = [4, 6, 8, 10, 12];
+const appVersion = Constants.expoConfig?.version ?? null;
+const FABLE = "Fable";
+
+function useUsedPalette() {
+  const { themeAppearance, themeVariables } = useAppearancePreferences();
+  return [
+    themeAppearance === "dark" ? "#34d399" : "#047857",
+    themeVariables["--color-warning-foreground"],
+    themeVariables["--color-danger-foreground"],
+  ] as const;
+}
+
+function useUsedColor(percent: number) {
+  return statusLineColorMix(percent, useUsedPalette(), statusLineNativeColorMix);
+}
 
 function useGaugeColor(
   percent: number,
   kind: GaugeKind,
   projectedRemainingPercent?: number | null,
 ) {
-  const { themeAppearance, themeVariables } = useAppearancePreferences();
-  const tone = statusLineGaugeTone(percent, kind, projectedRemainingPercent);
+  const { themeVariables } = useAppearancePreferences();
+  const used = statusLineGaugeUsedPercent(percent, kind, projectedRemainingPercent);
   return {
-    color: {
-      success: themeAppearance === "dark" ? "#34d399" : "#047857",
-      warning: themeVariables["--color-warning-foreground"],
-      error:
-        kind === "context"
-          ? themeAppearance === "dark"
-            ? "#f87171"
-            : "#b91c1c"
-          : themeVariables["--color-danger-foreground"],
-    }[tone],
-    alarm: tone === "error",
+    color: useUsedColor(used),
+    fillOpacity: 0.3 * (used / 100) ** 4,
     foreground: themeVariables["--color-foreground"],
   };
 }
@@ -60,8 +72,8 @@ function Dial(props: {
 }) {
   const interLoaded = useContext(StatusLineInterLoaded);
   const percent = statusLineGaugePercent(props.percent);
-  const { color, alarm, foreground } = useGaugeColor(
-    percent,
+  const { color, fillOpacity, foreground } = useGaugeColor(
+    props.percent,
     props.kind,
     props.projectedRemainingPercent,
   );
@@ -77,8 +89,8 @@ function Dial(props: {
           cx={13}
           cy={13}
           r={RING_RADIUS}
-          fill={alarm ? color : "none"}
-          fillOpacity={0.3}
+          fill={color}
+          fillOpacity={fillOpacity}
           stroke={color}
           strokeOpacity={0.22}
           strokeWidth={3}
@@ -141,18 +153,22 @@ function Dial(props: {
 }
 
 function Effort({ effort }: { readonly effort: string }) {
-  const level = statusLineEffortBars(effort);
-  if (level === 0) return <Text className="text-2xs text-foreground-muted">{effort}</Text>;
+  const { themeAppearance } = useAppearancePreferences();
+  const position = statusLineEffortPosition(effort);
+  const variant = themeAppearance === "dark" ? 1 : 0;
+  const [low, medium, high, extraHigh, max] = STATUS_LINE_EFFORT_COLORS;
+  const color =
+    position === undefined
+      ? undefined
+      : statusLineColorMix(
+          position,
+          [low[variant], medium[variant], high[variant], extraHigh[variant], max[variant]],
+          statusLineNativeColorMix,
+        );
   return (
-    <View className="shrink-0 flex-row items-end gap-px">
-      {EFFORT_HEIGHTS.map((height, index) => (
-        <View
-          key={height}
-          className={`w-[3px] rounded-sm ${index < level ? "bg-foreground" : "bg-foreground/30"}`}
-          style={{ height }}
-        />
-      ))}
-    </View>
+    <Text numberOfLines={1} className="text-2xs" style={{ color }}>
+      {effort}
+    </Text>
   );
 }
 
@@ -173,6 +189,7 @@ function LimitDial(props: {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
   const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
+  const resetColor = useUsedColor(statusLineBurnRisk(props.limit, props.nowMs));
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remainingLabel = gt("{percent}% remaining", { percent: remainingPercent });
   const projectedLabel =
@@ -197,7 +214,7 @@ function LimitDial(props: {
               size={10}
               tintColorClassName="accent-foreground-muted"
             />
-            <StripValue>{remaining}</StripValue>
+            <StripValue color={resetColor}>{remaining}</StripValue>
             {props.showDepletionRatio && depletionRatioPercent !== undefined ? (
               <View className="ms-0.5 border-s border-border ps-1">
                 <StripValue>{depletionRatioPercent}%</StripValue>
@@ -214,22 +231,31 @@ function LimitDial(props: {
   );
 }
 
+function estimateTextWidth(text: string, fontScale: number): number {
+  return (text.length * 5.5 + 3) * fontScale;
+}
+
 export function minimumStatusDialWidth(stats: StatusLineStats, fontScale: number): number {
   return (
     24 +
-    (stats.contextPercent === null ? 0 : 34) +
-    (stats.fiveHour === null ? 0 : 34) +
-    (stats.weekly === null ? 0 : 34) +
-    ((stats.contextTokens === null ? 0 : 44) + (stats.modelName === null ? 0 : 102)) * fontScale
+    (stats.contextPercent === null ? 0 : 30) +
+    (stats.contextTokens === null
+      ? 0
+      : estimateTextWidth(formatStatusLineTokens(stats.contextTokens), fontScale)) +
+    (stats.modelName === null
+      ? 0
+      : Math.min(90, estimateTextWidth(stats.modelName, fontScale)) +
+        (stats.effort === null ? 0 : estimateTextWidth(stats.effort, fontScale)) +
+        10)
   );
 }
 
-function StripValue(props: { readonly children: ReactNode }) {
+function StripValue(props: { readonly children: ReactNode; readonly color?: string }) {
   return (
     <Text
       numberOfLines={1}
       className="text-2xs text-foreground-muted"
-      style={{ fontVariant: ["tabular-nums"] }}
+      style={{ fontVariant: ["tabular-nums"], color: props.color }}
     >
       {props.children}
     </Text>
@@ -248,22 +274,84 @@ export function ThreadStatusDialStrip(props: {
   const { stats, nowMs, availableWidth, fontScale } = props;
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
   const contextLabel = gt("Context", { $context: "model context window" });
+  const compactContextLabel = gt("ctx", { $context: "short label for model context" });
+  const weeklyLabel = gt("week", { $context: "weekly usage limit" });
+  const compactWeeklyLabel = gt("wk", { $context: "short label for weekly usage" });
   const uptime = statusLineUptime(props.createdAt, nowMs);
-  const compactWidth = minimumStatusDialWidth(stats, fontScale);
-  const captionWidth =
-    compactWidth +
-    ((stats.fiveHour === null ? 0 : 38) + (stats.weekly === null ? 0 : 38)) * fontScale;
-  const showCaptions = availableWidth >= captionWidth;
+  const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
+  const cost =
+    stats.cost === null ? null : `${stats.cost.amount}${stats.cost.basis === "api" ? " API" : ""}`;
   const weeklyRatio = stats.weekly?.depletionRatioPercent;
-  const ratioWidth =
-    weeklyRatio === undefined ? 0 : (16 + String(weeklyRatio).length * 8) * fontScale;
-  const showDepletionRatio = ratioWidth > 0 && availableWidth >= captionWidth + ratioWidth;
-  const uptimeWidth =
-    captionWidth + (showDepletionRatio ? ratioWidth : 0) + (uptime === null ? 0 : 60 * fontScale);
-  const cacheWidth = uptimeWidth + (stats.cachePercent === null ? 0 : 55 * fontScale);
-  const tokensWidth =
-    cacheWidth +
-    ((stats.inputTokens === null ? 0 : 48) + (stats.outputTokens === null ? 0 : 47)) * fontScale;
+  const fast =
+    stats.fastMode === null
+      ? null
+      : stats.fastMode
+        ? gt("On", { $context: "option state" })
+        : gt("Off", { $context: "option state" });
+  const textWidth = (text: string) => estimateTextWidth(text, fontScale);
+  const tokenWidth = (count: number | null) =>
+    count === null ? 0 : 16 + textWidth(formatStatusLineTokens(count));
+  const item = <Id extends string>(id: Id, value: string | null, iconWidth = 0) =>
+    value === null ? [] : [{ id, full: textWidth(value) + iconWidth + 8 }];
+  const limitWidth = (limit: StatusLineLimit, caption: string) => {
+    const countdown = statusLineLimitRemaining(limit, nowMs);
+    return 38 + Math.max(textWidth(caption), countdown === null ? 0 : 12 + textWidth(countdown));
+  };
+  const core = minimumStatusDialWidth(stats, fontScale);
+  const captionWidth = (caption: string) =>
+    context === null
+      ? 0
+      : stats.contextPercent === null
+        ? textWidth(caption)
+        : Math.max(0, textWidth(caption) - textWidth(context));
+  const { compact, visible } = fitStatusLineItems(
+    availableWidth,
+    {
+      full: core + captionWidth(contextLabel),
+      compact: core + captionWidth(compactContextLabel),
+    },
+    [
+      ...(stats.weekly === null
+        ? []
+        : ([
+            {
+              id: "weekly",
+              full: limitWidth(stats.weekly, weeklyLabel),
+              compact: limitWidth(stats.weekly, compactWeeklyLabel),
+            },
+          ] as const)),
+      ...(stats.fableWeekly === null
+        ? []
+        : ([
+            {
+              id: "fableWeekly",
+              full: limitWidth(stats.fableWeekly, FABLE),
+            },
+          ] as const)),
+      ...(stats.fiveHour === null
+        ? []
+        : ([{ id: "fiveHour", full: limitWidth(stats.fiveHour, "5h") }] as const)),
+      ...item("cost", cost),
+      ...item("weeklyRatio", weeklyRatio === undefined ? null : `${weeklyRatio}%`),
+      ...item("uptime", uptime, 16),
+      ...item("cache", stats.cachePercent === null ? null : "100%", 16),
+      ...(stats.inputTokens === null && stats.outputTokens === null
+        ? []
+        : ([
+            {
+              id: "tokens",
+              full: tokenWidth(stats.inputTokens) + tokenWidth(stats.outputTokens) + 8,
+            },
+          ] as const)),
+      ...item("api", stats.apiTime, 16),
+      ...item("fast", fast, 16),
+      ...item("style", stats.outputStyle),
+      ...item("appVersion", appVersion),
+      ...item("providerVersion", stats.version),
+    ],
+  );
+  const showDepletionRatio = visible.has("weeklyRatio");
+  const contextCaption = compact ? compactContextLabel : contextLabel;
   return (
     <View className="min-w-0 shrink flex-row items-center gap-2">
       {stats.modelName === null ? null : (
@@ -272,63 +360,69 @@ export function ThreadStatusDialStrip(props: {
             {stats.modelName}
           </Text>
           {stats.effort === null ? null : <Effort effort={stats.effort} />}
-          {stats.fastMode ? (
-            <SymbolView
-              name={{ ios: "bolt.fill", android: "bolt" }}
-              size={12}
-              accessibilityLabel={gt("Fast mode")}
-            />
-          ) : null}
         </View>
       )}
       {stats.contextPercent !== null && context !== null ? (
         <Dial
           percent={stats.contextPercent}
           kind="context"
-          caption={showCaptions ? contextLabel : undefined}
+          caption={contextCaption}
           detail={<StripValue>{context}</StripValue>}
           label={gt("Context {percent}% used, {context} tokens", {
-            percent: stats.contextPercent,
+            percent: statusLineGaugePercent(stats.contextPercent),
             context,
           })}
         />
       ) : context === null ? null : (
         <Text className="shrink-0 text-2xs text-foreground-muted">
-          {showCaptions ? `${contextLabel} ${context}` : context}
+          {contextCaption} {context}
         </Text>
       )}
-      {stats.fiveHour === null ? null : (
-        <LimitDial
-          limit={stats.fiveHour}
-          nowMs={nowMs}
-          title={gt("5-hour limit")}
-          {...(showCaptions ? { caption: "5h" } : {})}
-        />
+      {stats.fiveHour === null || !visible.has("fiveHour") ? null : (
+        <LimitDial limit={stats.fiveHour} nowMs={nowMs} title={gt("5-hour limit")} caption="5h" />
       )}
-      {stats.weekly === null ? null : (
+      {stats.weekly === null || !visible.has("weekly") ? null : (
         <LimitDial
           limit={stats.weekly}
           nowMs={nowMs}
           title={gt("Weekly limit")}
           showDepletionRatio={showDepletionRatio}
-          {...(showCaptions ? { caption: gt("week", { $context: "weekly usage limit" }) } : {})}
+          caption={compact ? compactWeeklyLabel : weeklyLabel}
         />
       )}
-      {uptime === null || availableWidth < uptimeWidth ? null : (
+      {stats.fableWeekly === null || !visible.has("fableWeekly") ? null : (
+        <LimitDial
+          limit={stats.fableWeekly}
+          nowMs={nowMs}
+          title={gt("Fable weekly limit")}
+          caption={FABLE}
+        />
+      )}
+      {cost === null || !visible.has("cost") ? null : (
+        <View
+          accessible
+          accessibilityLabel={
+            stats.cost?.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")
+          }
+          className="shrink-0"
+        >
+          <StripValue>{cost}</StripValue>
+        </View>
+      )}
+      {uptime === null || !visible.has("uptime") ? null : (
         <View className="shrink-0 flex-row items-center gap-1">
-          <View className="mr-1 h-4 w-px bg-border" />
           <SymbolView name="timer" size={12} tintColorClassName="accent-foreground-muted" />
           <StripValue>{uptime}</StripValue>
         </View>
       )}
-      {stats.cachePercent === null || availableWidth < cacheWidth ? null : (
+      {stats.cachePercent === null || !visible.has("cache") ? null : (
         <View className="shrink-0 flex-row items-center gap-1">
           <IconDatabase size={12} color={themeVariables["--color-foreground-muted"]} />
-          <StripValue>{stats.cachePercent}%</StripValue>
+          <StripValue color={cacheColor}>{Math.round(stats.cachePercent)}%</StripValue>
         </View>
       )}
       {(stats.inputTokens === null && stats.outputTokens === null) ||
-      availableWidth < tokensWidth ? null : (
+      !visible.has("tokens") ? null : (
         <View className="shrink-0 flex-row items-center gap-1">
           {stats.inputTokens === null ? null : (
             <>
@@ -347,6 +441,35 @@ export function ThreadStatusDialStrip(props: {
             </>
           )}
         </View>
+      )}
+      {stats.apiTime === null || !visible.has("api") ? null : (
+        <View
+          accessible
+          accessibilityLabel={gt("API time")}
+          className="shrink-0 flex-row items-center gap-1"
+        >
+          <SymbolView name="clock" size={12} tintColorClassName="accent-foreground-muted" />
+          <StripValue>{stats.apiTime}</StripValue>
+        </View>
+      )}
+      {fast === null || !visible.has("fast") ? null : (
+        <View
+          accessible
+          accessibilityLabel={gt("Fast mode")}
+          className="shrink-0 flex-row items-center gap-1"
+        >
+          <SymbolView name={{ ios: "bolt.fill", android: "bolt" }} size={12} />
+          <StripValue>{fast}</StripValue>
+        </View>
+      )}
+      {stats.outputStyle === null || !visible.has("style") ? null : (
+        <StripValue>{stats.outputStyle}</StripValue>
+      )}
+      {appVersion === null || !visible.has("appVersion") ? null : (
+        <StripValue>v{appVersion}</StripValue>
+      )}
+      {stats.version === null || !visible.has("providerVersion") ? null : (
+        <StripValue>v{stats.version}</StripValue>
       )}
     </View>
   );
@@ -376,6 +499,7 @@ function Fact(props: {
   readonly meter?: MeterValue;
   readonly dimmed?: boolean;
   readonly details?: ReadonlyArray<string>;
+  readonly note?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
@@ -388,6 +512,7 @@ function Fact(props: {
         {props.children}
       </Text>
       {props.meter ? <Meter {...props.meter} /> : null}
+      {props.note}
       {props.details?.map((detail) => (
         <Text
           key={detail}
@@ -408,14 +533,21 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
+  const resetColor = useUsedColor(statusLineBurnRisk(props.limit, props.nowMs));
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
       meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
+      note={
+        note === null ? null : (
+          <Text className="text-xs" style={{ color: resetColor }}>
+            {note}
+          </Text>
+        )
+      }
       details={[
-        ...(note === null ? [] : [note]),
         ...(projectedRemainingPercent === null
           ? []
           : [
@@ -441,9 +573,7 @@ export function ThreadStatusDialDetails(props: {
   const gt = useGT();
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
-  const model = [stats.modelName, stats.effort, stats.fastMode ? gt("Fast mode") : null]
-    .filter(Boolean)
-    .join(" · ");
+  const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
   return (
     <View className="gap-4">
       <View className="flex-row flex-wrap gap-3">
@@ -454,7 +584,9 @@ export function ThreadStatusDialDetails(props: {
               ? {}
               : { meter: { percent: stats.contextPercent, kind: "context" } })}
           >
-            {stats.contextPercent === null ? null : `${stats.contextPercent}% · `}
+            {stats.contextPercent === null
+              ? null
+              : `${statusLineGaugePercent(stats.contextPercent)}% · `}
             {formatStatusLineTokens(stats.contextTokens)}
             {stats.contextMaxTokens === null
               ? null
@@ -467,36 +599,65 @@ export function ThreadStatusDialDetails(props: {
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
         )}
-        {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}
-        {stats.inputTokens === null ? null : (
-          <Fact name={gt("Tokens")}>
-            {stats.cachePercent === null
-              ? gt("{input} in · {output} out", {
-                  input: formatStatusLineTokens(stats.inputTokens),
-                  output: formatStatusLineTokens(stats.outputTokens ?? 0),
-                })
-              : gt("{input} in · {output} out · {percent}% cached", {
-                  input: formatStatusLineTokens(stats.inputTokens),
-                  output: formatStatusLineTokens(stats.outputTokens ?? 0),
-                  percent: stats.cachePercent,
-                })}
+        {stats.fableWeekly === null ? null : (
+          <LimitFact name={gt("Fable weekly limit")} limit={stats.fableWeekly} nowMs={nowMs} />
+        )}
+        {stats.cost === null ? null : (
+          <Fact
+            name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            details={[
+              gt("Recorded main-agent usage for the current provider thread."),
+              ...(stats.cost.partial ? [gt("Some turns could not be priced in full.")] : []),
+            ]}
+          >
+            {stats.cost.amount}
           </Fact>
         )}
-        {model ? <Fact name={gt("Model")}>{model}</Fact> : null}
+        {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}
+        {stats.cachePercent === null ? null : (
+          <Fact name={gt("Cache hits")}>
+            <Text style={{ color: cacheColor }}>{Math.round(stats.cachePercent)}%</Text>
+          </Fact>
+        )}
+        {stats.inputTokens === null || stats.outputTokens === null ? null : (
+          <Fact name={gt("Tokens")}>
+            {gt("{input} in · {output} out", {
+              input: formatStatusLineTokens(stats.inputTokens),
+              output: formatStatusLineTokens(stats.outputTokens),
+            })}
+          </Fact>
+        )}
+        {stats.apiTime === null ? null : <Fact name={gt("API time")}>{stats.apiTime}</Fact>}
+        {stats.fastMode === null ? null : (
+          <Fact name={gt("Fast mode")}>
+            {stats.fastMode
+              ? gt("On", { $context: "option state" })
+              : gt("Off", { $context: "option state" })}
+          </Fact>
+        )}
+        {stats.outputStyle === null ? null : (
+          <Fact name={gt("Output style")}>{stats.outputStyle}</Fact>
+        )}
+        {stats.modelName === null ? null : (
+          <Fact name={gt("Model")}>
+            {stats.modelName}
+            {stats.effort === null ? null : (
+              <>
+                {" "}
+                <Effort effort={stats.effort} />
+              </>
+            )}
+          </Fact>
+        )}
+        {appVersion === null ? null : <Fact name={gt("HomuCode version")}>{appVersion}</Fact>}
+        {stats.version === null ? null : <Fact name={gt("Provider version")}>{stats.version}</Fact>}
       </View>
-      {stats.cwd === null && stats.version === null ? null : (
-        <View className="gap-1 border-t border-border pt-2">
-          {stats.cwd === null ? null : (
-            <View className="flex-row items-start gap-1.5">
-              <SymbolView name="folder" size={13} tintColorClassName="accent-foreground-muted" />
-              <Text selectable className="shrink text-xs text-foreground-muted">
-                {stats.cwd}
-              </Text>
-            </View>
-          )}
-          {stats.version === null ? null : (
-            <Text className="text-xs text-foreground-muted">v{stats.version}</Text>
-          )}
+      {stats.cwd === null ? null : (
+        <View className="flex-row items-start gap-1.5 border-t border-border pt-2">
+          <SymbolView name="folder" size={13} tintColorClassName="accent-foreground-muted" />
+          <Text selectable className="shrink text-xs text-foreground-muted">
+            {stats.cwd}
+          </Text>
         </View>
       )}
     </View>

@@ -646,6 +646,17 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio
       ? [gt("Weekly depletion ratio")]
       : []),
+    ...(settings.statusLineUseApiPrice !== DEFAULT_UNIFIED_SETTINGS.statusLineUseApiPrice
+      ? [gt("Use API prices for thread cost")]
+      : []),
+    ...(settings.statusLineSessionBurnTauMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes
+      ? [gt("5-hour burn-rate smoothing")]
+      : []),
+    ...(settings.statusLineWeeklyBurnTauMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes
+      ? [gt("Weekly burn-rate smoothing")]
+      : []),
     ...(settings.statusLineCommand !== DEFAULT_UNIFIED_SETTINGS.statusLineCommand
       ? ["Status line command"]
       : []),
@@ -790,6 +801,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       statusLineEnabled: DEFAULT_UNIFIED_SETTINGS.statusLineEnabled,
       statusLineShowWeeklyDepletionRatio:
         DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio,
+      statusLineUseApiPrice: DEFAULT_UNIFIED_SETTINGS.statusLineUseApiPrice,
+      statusLineSessionBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes,
+      statusLineWeeklyBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes,
       statusLineCommand: DEFAULT_UNIFIED_SETTINGS.statusLineCommand,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmTerminalClose: DEFAULT_UNIFIED_SETTINGS.confirmTerminalClose,

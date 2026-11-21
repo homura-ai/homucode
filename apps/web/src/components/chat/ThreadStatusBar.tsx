@@ -1,6 +1,6 @@
 import { useGT } from "gt-react";
 import { createPresenceFlag } from "./presenceFlag";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isManagedSettingPath, ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import {
   type AnsiSegment,
   buildStatusLineInput,
@@ -20,7 +20,7 @@ import {
 } from "@t3tools/client-runtime/status-line";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import {
   type CSSProperties,
   useContext,
@@ -35,6 +35,8 @@ import { useClientSettings, usePrimarySettings } from "../../hooks/useSettings";
 import { formatShortTimestamp } from "../../timestampFormat";
 import { observeResize } from "~/lib/observeResize";
 import { serverEnvironment } from "../../state/server";
+import { StatusLineBurnTauControl } from "../settings/StatusLineBurnTauControl";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { StatusDialCard, StatusDialStrip, StatusLineModelUsage } from "./ThreadStatusDials";
 
 // Claude Code redraws on events; the timer keeps clocks and countdowns current while idle.
@@ -50,9 +52,15 @@ type StatusLineResult =
       /** The name the script was given, to write out where the line shortens it. */
       readonly modelName: string | null;
     }
-  | { readonly stats: StatusLineStats; readonly createdAt: string | null };
+  | {
+      readonly stats: StatusLineStats;
+      readonly createdAt: string | null;
+      readonly environmentId: EnvironmentId;
+    };
 
 // The runner sits in the chat view, which has its input; the top bar reads the result from here.
+const emptyAccountingAtom = Atom.make(AsyncResult.success(null));
+
 const statusLineResultAtom = Atom.family((_key: string | undefined) =>
   Atom.make<StatusLineResult | null>(null),
 );
@@ -358,9 +366,32 @@ export function ThreadStatusLineRunner(props: {
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.settings.statusLineShowWeeklyDepletionRatio === true,
   );
+  const accountingSupported = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.statusLineAccounting === true,
+  );
+  const useApiPrice = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.settings.statusLineUseApiPrice === true,
+  );
+  const accounting = useAtomValue(
+    enabled && accountingSupported
+      ? serverEnvironment.statusLineAccounting({
+          environmentId,
+          input: { threadId: ThreadId.make(props.source.threadId) },
+        })
+      : emptyAccountingAtom,
+    (result) => AsyncResult.getOrElse(result, () => null),
+  );
   const registry = useContext(RegistryContext);
   // Limits are read on the minute so the key, and with it the command, only changes on new data.
-  const source = { ...props.source, nowMs: useNowMinuteMs(), showWeeklyDepletionRatio };
+  const source = {
+    ...props.source,
+    nowMs: useNowMinuteMs(),
+    showWeeklyDepletionRatio,
+    accounting,
+    useApiPrice,
+  };
   // Only the mode in use reads the thread's state; the other key stays empty.
   const inputKey = custom ? JSON.stringify(buildStatusLineInput(source)) : "";
   const statsKey = custom ? "" : JSON.stringify(buildStatusLineStats(source));
@@ -376,7 +407,7 @@ export function ThreadStatusLineRunner(props: {
     if (!custom) {
       // Parsed back from the key, which is what tells the effect the stats changed.
       const stats: StatusLineStats = JSON.parse(statsKey);
-      registry.set(resultAtom, { stats, createdAt });
+      registry.set(resultAtom, { stats, createdAt, environmentId });
       return;
     }
     // Dials left from before a command was set go at once, not when its first draw lands.
@@ -475,6 +506,32 @@ export function ThreadHeaderStatus(props: {
   );
 }
 
+function StatusLineBurnControls(props: { readonly environmentId: EnvironmentId }) {
+  const { environmentId } = props;
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const canWrite = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const update = useAtomCommand(serverEnvironment.updateSettings);
+  if (config?.environment.capabilities.statusLineAccounting !== true) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-3 border-t pt-3">
+      {(["statusLineSessionBurnTauMinutes", "statusLineWeeklyBurnTauMinutes"] as const).map(
+        (setting) => (
+          <StatusLineBurnTauControl
+            key={setting}
+            showLabel
+            setting={setting}
+            value={config.settings[setting]}
+            disabled={!canWrite || isManagedSettingPath(config.managedPolicy, setting)}
+            onChange={(minutes) =>
+              void update({ environmentId, input: { patch: { [setting]: minutes } } })
+            }
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
 function HeaderStatusLine(props: {
   readonly result: StatusLineResult;
   readonly items: ReadonlyArray<StatusLineItem>;
@@ -550,7 +607,10 @@ function HeaderStatusLine(props: {
             className={`max-h-[min(28rem,60dvh)] overflow-y-auto overscroll-contain ${drawn ? "px-4 py-3" : "px-2 py-1.5"}`}
           >
             {drawn ? (
-              <StatusDialCard stats={result.stats} createdAt={result.createdAt} nowMs={nowMs} />
+              <>
+                <StatusDialCard stats={result.stats} createdAt={result.createdAt} nowMs={nowMs} />
+                <StatusLineBurnControls environmentId={result.environmentId} />
+              </>
             ) : (
               <div
                 data-labels="long"

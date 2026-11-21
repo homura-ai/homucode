@@ -1,6 +1,6 @@
 import { useGT } from "gt-react-native";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { isManagedSettingPath, type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
 import {
   type AnsiSegment,
   buildStatusLineInput,
@@ -11,6 +11,7 @@ import {
   statusLineColorRole,
   type StatusLineInputSource,
 } from "@t3tools/client-runtime/status-line";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { useContext, useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import {
@@ -36,6 +37,8 @@ import {
   ThreadStatusDialStrip,
 } from "./ThreadStatusDials";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { StatusLineBurnTauControl } from "../settings/components/StatusLineBurnTauControl";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import { useNowMinuteMs } from "../../lib/clock";
 import type { MobileThemeVariables } from "../../lib/mobileTheme";
@@ -43,6 +46,7 @@ import type { MobileThemeVariables } from "../../lib/mobileTheme";
 // Claude Code redraws on events; the timer keeps clocks and countdowns current while idle.
 const REFRESH_MS = 30_000;
 const DEBOUNCE_MS = 300;
+const emptyAccountingAtom = Atom.make(AsyncResult.success(null));
 
 // Scripts pick terminal colors; each text color takes the theme color with the same meaning.
 function roleColors(
@@ -177,11 +181,28 @@ export function ThreadStatusBar(
     config.settings.statusLineEnabled !== false;
   const custom = enabled ? (config.settings.statusLineCommand ?? "") : "";
   const contextWindow = useThreadContextWindow(props.thread);
+  const accounting = useAtomValue(
+    enabled &&
+      props.thread !== null &&
+      config?.environment.capabilities.statusLineAccounting === true
+      ? serverEnvironment.statusLineAccounting({
+          environmentId: props.environmentId,
+          input: { threadId: props.thread.threadId },
+        })
+      : emptyAccountingAtom,
+    (result) => AsyncResult.getOrElse(result, () => null),
+  );
+  const canWrite = useAtomValue(
+    serverEnvironment.updateSettings.permissionAtom(props.environmentId),
+  );
+  const update = useAtomCommand(serverEnvironment.updateSettings);
   const nowMs = useNowMinuteMs();
   const source = {
     ...props.source,
     contextWindow,
     nowMs,
+    accounting,
+    useApiPrice: config?.settings.statusLineUseApiPrice === true,
     showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,
   };
   const command = useStatusLineCommand(props, source, custom);
@@ -270,6 +291,26 @@ export function ThreadStatusBar(
                 />
               ))
             )}
+            {stats !== null && config?.environment.capabilities.statusLineAccounting === true ? (
+              <View className="gap-2 border-t border-border pt-3">
+                {(
+                  ["statusLineSessionBurnTauMinutes", "statusLineWeeklyBurnTauMinutes"] as const
+                ).map((setting) => (
+                  <StatusLineBurnTauControl
+                    key={setting}
+                    setting={setting}
+                    value={config.settings[setting]}
+                    disabled={!canWrite || isManagedSettingPath(config.managedPolicy, setting)}
+                    onChange={(minutes) =>
+                      void update({
+                        environmentId: props.environmentId,
+                        input: { patch: { [setting]: minutes } },
+                      })
+                    }
+                  />
+                ))}
+              </View>
+            ) : null}
           </ScreenScrollView>
         </Sheet>
       ) : null}
