@@ -193,6 +193,7 @@ import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErr
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as SecretCheck from "./secrets/SecretCheck.ts";
 import * as StatusLine from "./statusLine/StatusLine.ts";
+import * as StatusLineAccounting from "./statusLine/StatusLineAccounting.ts";
 import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
@@ -1639,6 +1640,7 @@ export const layerWsRpc = (
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
       const secretCheck = yield* SecretCheck.SecretCheck;
       const statusLine = yield* StatusLine.StatusLine;
+      const statusLineAccounting = yield* StatusLineAccounting.StatusLineAccounting;
       const buildTools = yield* BuildTools.BuildTools;
       const otlpEndpointCheck = yield* OtlpEndpointCheck.OtlpEndpointCheck;
       const appScripts = yield* AppScripts.AppScripts;
@@ -2841,6 +2843,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverBuildToolsRun]: (input) => buildTools.run(input),
         [WS_METHODS.serverBuildToolsState]: () => buildTools.changes,
         [WS_METHODS.serverRenderStatusLine]: (input) => statusLine.render(input),
+        [WS_METHODS.serverGetStatusLineAccounting]: (input) => statusLineAccounting.read(input),
         [WS_METHODS.serverGetTraceDiagnostics]: (_input) =>
           TraceDiagnostics.readTraceDiagnostics({
             traceFilePath: config.serverTracePath,

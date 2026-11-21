@@ -243,6 +243,7 @@ export const make = Effect.gen(function* () {
       otlpEndpointCheck: true,
       secretSourceCheck: true,
       statusLine: true,
+      statusLineAccounting: true,
       homuSetup: true,
       buildTools: true,
       projectWorktreeCleanup: true,

@@ -7144,6 +7144,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 status: input.status,
                 startedAt: input.context.startedAt,
                 completedAt: input.completedAt,
+                ...(input.context.appliedServiceTier === undefined
+                  ? {}
+                  : {
+                      apiSpeed:
+                        input.context.appliedServiceTier === "ultrafast"
+                          ? ("ultrafast" as const)
+                          : input.context.appliedServiceTier === "priority" ||
+                              input.context.appliedServiceTier === "fast"
+                            ? ("fast" as const)
+                            : ("standard" as const),
+                    }),
                 turnTokenUsage: completeCodexTurnTokenUsage(
                   usageStateForThread(
                     input.context.providerThread.nativeThreadRef?.nativeId ??

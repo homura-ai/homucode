@@ -476,6 +476,7 @@ export interface LimitPoolWindow {
   readonly pace: LimitPace | null;
   readonly projectedUsedPercent: number | null;
   readonly depletionRatioPercent: number | null;
+  readonly burnRatePercentPerSecond?: number;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -636,7 +637,13 @@ function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, 
   return {
     account,
     // Suppression is not session spending, so it has no session pace clock.
-    window: { ...reported, usedPercent: 100, resetsAt, windowDurationMins: undefined },
+    window: {
+      ...reported,
+      usedPercent: 100,
+      resetsAt,
+      windowDurationMins: undefined,
+      burnRatePercentPerSecond: undefined,
+    },
     refillPercent,
   };
 }
@@ -710,6 +717,14 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       forecasts.length === members.length
         ? forecasts.reduce((sum, used) => sum + used, 0) / totalWeight
         : null;
+    const measuredMembers = members.filter((m) => m.window.burnRatePercentPerSecond !== undefined);
+    const burnRate =
+      measuredMembers.length === members.length
+        ? measuredMembers.reduce(
+            (sum, m) => sum + m.window.burnRatePercentPerSecond! * weightOf.get(m)!,
+            0,
+          ) / totalWeight
+        : undefined;
     return {
       id,
       kind: first.kind,
@@ -723,6 +738,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
       projectedUsedPercent,
       depletionRatioPercent: usageDepletionRatioPercent(usedPercent, projectedUsedPercent),
+      ...(burnRate === undefined ? {} : { burnRatePercentPerSecond: burnRate }),
       resets,
     };
   });

@@ -68,6 +68,8 @@ import {
   SpeechPostProcessingPromptSettings,
 } from "./speech.ts";
 
+const StatusLineBurnTauMinutes = Schema.Finite.check(Schema.isGreaterThan(0));
+
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
@@ -1749,6 +1751,13 @@ export const ServerSettings = Schema.Struct({
   statusLineShowWeeklyDepletionRatio: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  statusLineUseApiPrice: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  statusLineSessionBurnTauMinutes: StatusLineBurnTauMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(30)),
+  ),
+  statusLineWeeklyBurnTauMinutes: StatusLineBurnTauMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(1_440)),
+  ),
   /** Shell command that reads Claude Code's status line JSON on stdin. Empty runs the built-in script. */
   statusLineCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
@@ -2226,6 +2235,9 @@ export const ServerSettingsPatch = Schema.Struct({
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   statusLineEnabled: Schema.optionalKey(Schema.Boolean),
   statusLineShowWeeklyDepletionRatio: Schema.optionalKey(Schema.Boolean),
+  statusLineUseApiPrice: Schema.optionalKey(Schema.Boolean),
+  statusLineSessionBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
+  statusLineWeeklyBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
   statusLineCommand: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
