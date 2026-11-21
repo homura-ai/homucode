@@ -5705,5 +5705,8 @@
   "f8c98c83ffb2fb6f": "Tiempo activo",
   "8f01f72ab87d0628": "Tokens",
   "24778ed4c9f8a51e": "{input} de entrada · {output} de salida",
-  "f91047b9b24419e1": "{input} de entrada · {output} de salida · {percent} % en caché"
+  "f91047b9b24419e1": "{input} de entrada · {output} de salida · {percent} % en caché",
+  "c8fb8bb369023db2": "Proporción de agotamiento semanal",
+  "c2aac1b30cbd7325": "Muestra el tiempo hasta el reinicio semanal como porcentaje del tiempo estimado hasta agotar la cuota.",
+  "61a6422a50b51c9d": "Reinicio / agotamiento: {percent}%"
 }

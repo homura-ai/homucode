@@ -12746,5 +12746,8 @@
   "5416694ec0dacb31": "Mostra os modelos e os limites de uso informados para o ambiente desta conversa ao passar o ponteiro sobre a linha de status ou colocá-la em foco.",
   "e9b5f7b109cc1ded": "Mostra os modelos e os limites de uso informados para o ambiente desta conversa ao passar o ponteiro sobre a linha de status ou colocá-la em foco.",
   "f311f5a32d4dec24": "Modelo disponível em {duration}",
-  "82c863fc509de21d": "Verificando a disponibilidade do modelo"
+  "82c863fc509de21d": "Verificando a disponibilidade do modelo",
+  "61a6422a50b51c9d": "Redefinição / esgotamento {percent}%",
+  "c2aac1b30cbd7325": "Mostra o tempo até a redefinição semanal como porcentagem do tempo previsto até o esgotamento da cota.",
+  "c8fb8bb369023db2": "Proporção de esgotamento semanal"
 }

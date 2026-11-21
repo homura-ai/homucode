@@ -354,9 +354,13 @@ export function ThreadStatusLineRunner(props: {
     serverEnvironment.configValueAtom(environmentId),
     (config) => (config?.settings.statusLineCommand ?? "") !== "",
   );
+  const showWeeklyDepletionRatio = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.settings.statusLineShowWeeklyDepletionRatio === true,
+  );
   const registry = useContext(RegistryContext);
   // Limits are read on the minute so the key, and with it the command, only changes on new data.
-  const source = { ...props.source, nowMs: useNowMinuteMs() };
+  const source = { ...props.source, nowMs: useNowMinuteMs(), showWeeklyDepletionRatio };
   // Only the mode in use reads the thread's state; the other key stays empty.
   const inputKey = custom ? JSON.stringify(buildStatusLineInput(source)) : "";
   const statsKey = custom ? "" : JSON.stringify(buildStatusLineStats(source));

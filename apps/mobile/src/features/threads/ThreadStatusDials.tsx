@@ -12,11 +12,11 @@ import {
   type StatusLineStats,
 } from "@t3tools/client-runtime/status-line";
 import { useGT } from "gt-react-native";
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 
-import { AppText as Text } from "../../components/ui/AppText";
+import { StatusLineInterLoaded, StatusLineText as Text } from "./StatusLineTypography";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
@@ -58,6 +58,7 @@ function Dial(props: {
   readonly detail?: ReactNode;
   readonly dimmed?: boolean;
 }) {
+  const interLoaded = useContext(StatusLineInterLoaded);
   const percent = statusLineGaugePercent(props.percent);
   const { color, alarm, foreground } = useGaugeColor(
     percent,
@@ -117,7 +118,8 @@ function Dial(props: {
           y={13}
           fill={foreground}
           fontSize={percent === 100 ? 8 : 9}
-          fontWeight="600"
+          fontFamily={interLoaded ? "Inter-SemiBold" : undefined}
+          fontWeight={interLoaded ? "normal" : "600"}
           textAnchor="middle"
           alignmentBaseline="central"
         >
@@ -127,7 +129,7 @@ function Dial(props: {
       {props.caption === undefined && props.detail == null ? null : (
         <View>
           {props.caption === undefined ? null : (
-            <Text numberOfLines={1} className="text-2xs font-medium">
+            <Text medium numberOfLines={1} className="text-2xs font-medium">
               {props.caption}
             </Text>
           )}
@@ -166,16 +168,21 @@ function LimitDial(props: {
   readonly nowMs: number;
   readonly title: string;
   readonly caption?: string;
+  readonly showDepletionRatio?: boolean;
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
   const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
-  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remainingLabel = gt("{percent}% remaining", { percent: remainingPercent });
   const projectedLabel =
     projectedRemainingPercent === null
       ? null
       : gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent });
+  const depletionRatio =
+    depletionRatioPercent === undefined
+      ? null
+      : gt("Reset / depletion {percent}%", { percent: depletionRatioPercent });
   return (
     <Dial
       percent={remainingPercent}
@@ -191,11 +198,18 @@ function LimitDial(props: {
               tintColorClassName="accent-foreground-muted"
             />
             <StripValue>{remaining}</StripValue>
+            {props.showDepletionRatio && depletionRatioPercent !== undefined ? (
+              <View className="ms-0.5 border-s border-border ps-1">
+                <StripValue>{depletionRatioPercent}%</StripValue>
+              </View>
+            ) : null}
           </View>
         ) : null
       }
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
-      label={[props.title, remainingLabel, note, projectedLabel].filter(Boolean).join(", ")}
+      label={[props.title, remainingLabel, note, projectedLabel, depletionRatio]
+        .filter(Boolean)
+        .join(", ")}
     />
   );
 }
@@ -240,7 +254,12 @@ export function ThreadStatusDialStrip(props: {
     compactWidth +
     ((stats.fiveHour === null ? 0 : 38) + (stats.weekly === null ? 0 : 38)) * fontScale;
   const showCaptions = availableWidth >= captionWidth;
-  const uptimeWidth = captionWidth + (uptime === null ? 0 : 60 * fontScale);
+  const weeklyRatio = stats.weekly?.depletionRatioPercent;
+  const ratioWidth =
+    weeklyRatio === undefined ? 0 : (16 + String(weeklyRatio).length * 8) * fontScale;
+  const showDepletionRatio = ratioWidth > 0 && availableWidth >= captionWidth + ratioWidth;
+  const uptimeWidth =
+    captionWidth + (showDepletionRatio ? ratioWidth : 0) + (uptime === null ? 0 : 60 * fontScale);
   const cacheWidth = uptimeWidth + (stats.cachePercent === null ? 0 : 55 * fontScale);
   const tokensWidth =
     cacheWidth +
@@ -249,7 +268,7 @@ export function ThreadStatusDialStrip(props: {
     <View className="min-w-0 shrink flex-row items-center gap-2">
       {stats.modelName === null ? null : (
         <View className="min-w-0 shrink flex-row items-center gap-1">
-          <Text numberOfLines={1} className="max-w-24 shrink text-xs font-medium">
+          <Text medium numberOfLines={1} className="max-w-24 shrink text-xs font-medium">
             {stats.modelName}
           </Text>
           {stats.effort === null ? null : <Effort effort={stats.effort} />}
@@ -291,6 +310,7 @@ export function ThreadStatusDialStrip(props: {
           limit={stats.weekly}
           nowMs={nowMs}
           title={gt("Weekly limit")}
+          showDepletionRatio={showDepletionRatio}
           {...(showCaptions ? { caption: gt("week", { $context: "weekly usage limit" }) } : {})}
         />
       )}
@@ -355,6 +375,7 @@ function Fact(props: {
   readonly name: string;
   readonly meter?: MeterValue;
   readonly dimmed?: boolean;
+  readonly details?: ReadonlyArray<string>;
   readonly children: ReactNode;
 }) {
   return (
@@ -363,10 +384,19 @@ function Fact(props: {
       style={props.dimmed ? { opacity: 0.5 } : undefined}
     >
       <Text className="text-xs text-foreground-muted">{props.name}</Text>
-      <Text className="text-sm font-medium" style={{ fontVariant: ["tabular-nums"] }}>
+      <Text medium className="text-sm font-medium" style={{ fontVariant: ["tabular-nums"] }}>
         {props.children}
       </Text>
       {props.meter ? <Meter {...props.meter} /> : null}
+      {props.details?.map((detail) => (
+        <Text
+          key={detail}
+          className="text-xs leading-4 text-foreground-muted"
+          style={{ fontVariant: ["tabular-nums"] }}
+        >
+          {detail}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -378,18 +408,27 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
-  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
       meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
+      details={[
+        ...(note === null ? [] : [note]),
+        ...(projectedRemainingPercent === null
+          ? []
+          : [
+              gt("{percent}% projected remaining at reset", {
+                percent: projectedRemainingPercent,
+              }),
+            ]),
+        ...(depletionRatioPercent === undefined
+          ? []
+          : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
+      ]}
     >
       {gt("{percent}% remaining", { percent: remainingPercent })}
-      {note === null ? null : ` · ${note}`}
-      {projectedRemainingPercent === null
-        ? null
-        : ` · ${gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent })}`}
     </Fact>
   );
 }

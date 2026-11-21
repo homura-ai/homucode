@@ -419,7 +419,7 @@ describe("buildStatusLineInput", () => {
         label: "Session",
         scope: [],
         remainingPercent: 50,
-        projectedRemainingPercent: 28,
+        projectedRemainingPercent: 25,
         resetsAtMs: Date.parse(reset),
       },
       {
@@ -442,7 +442,7 @@ describe("buildStatusLineInput", () => {
     expect(buildStatusLineStats(routed)).toMatchObject({
       fiveHour: {
         remainingPercent: 50,
-        projectedRemainingPercent: 28,
+        projectedRemainingPercent: 25,
         resetsAtMs: Date.parse(reset),
       },
       weekly: { remainingPercent: 40, resetsAtMs: null },
@@ -503,7 +503,7 @@ describe("buildStatusLineInput", () => {
       }).fiveHour,
     ).toEqual({
       remainingPercent: 30,
-      projectedRemainingPercent: 0,
+      projectedRemainingPercent: -5,
       resetsAtMs: Date.parse(reset),
     });
 
@@ -626,7 +626,7 @@ describe("buildStatusLineInput", () => {
   it.each([
     [0, 150, 100, 100, "success"],
     [25.1, 150, 75, 50, "warning"],
-    [30, 225, 70, 0, "error"],
+    [30, 225, 70, -20, "error"],
     [44, 300, 56, null, "success"],
     [55, 0, 45, null, "warning"],
   ] as const)(
@@ -658,6 +658,47 @@ describe("buildStatusLineInput", () => {
       });
       expect(stats.fiveHour).toMatchObject({ remainingPercent, projectedRemainingPercent });
       expect(statusLineGaugeTone(remainingPercent, "limit", projectedRemainingPercent)).toBe(tone);
+    },
+  );
+
+  it.each([
+    [25, 50, 33],
+    [50, 0, 100],
+    [60, -20, 150],
+    [0, 100, 0],
+    [100, -100, undefined],
+  ] as const)(
+    "reports a weekly depletion ratio for %s%% spent when enabled",
+    (usedPercent, projected, ratio) => {
+      const provider = source.providers[0]!;
+      const weeklySource = {
+        ...source,
+        providers: [
+          {
+            ...provider,
+            usageLimits: {
+              checkedAt: provider.checkedAt,
+              windows: [
+                {
+                  id: "weekly",
+                  kind: "weekly" as const,
+                  label: "7d",
+                  usedPercent,
+                  windowDurationMins: 10_080,
+                  resetsAt: DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 5_040 * 60_000)),
+                },
+              ],
+            },
+          },
+        ],
+      };
+      expect(buildStatusLineStats(weeklySource).weekly?.depletionRatioPercent).toBeUndefined();
+      const weekly = buildStatusLineStats({
+        ...weeklySource,
+        showWeeklyDepletionRatio: true,
+      }).weekly;
+      expect(weekly?.projectedRemainingPercent).toBe(projected);
+      expect(weekly?.depletionRatioPercent).toBe(ratio);
     },
   );
 

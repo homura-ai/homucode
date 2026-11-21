@@ -12756,5 +12756,8 @@
   "3adca48d927d36f5": "Show all models in status line details",
   "b2cc17d714a15e76": "Show all models in status line details",
   "5416694ec0dacb31": "Show models and reported usage limits for this thread’s environment when you hover or focus the status line.",
-  "e9b5f7b109cc1ded": "Show models and reported usage limits for this thread’s environment when you hover or focus the status line."
+  "e9b5f7b109cc1ded": "Show models and reported usage limits for this thread’s environment when you hover or focus the status line.",
+  "61a6422a50b51c9d": "Reset / depletion {percent}%",
+  "c2aac1b30cbd7325": "Show the time until the weekly reset as a percentage of the time until quota is projected to run out.",
+  "c8fb8bb369023db2": "Weekly depletion ratio"
 }

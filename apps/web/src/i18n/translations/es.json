@@ -12743,5 +12743,8 @@
   "5416694ec0dacb31": "Muestra los modelos y los límites de uso disponibles para el entorno de este hilo al pasar el puntero sobre la línea de estado o al enfocarla.",
   "e9b5f7b109cc1ded": "Muestra los modelos y los límites de uso disponibles para el entorno de este hilo al pasar el puntero sobre la línea de estado o al enfocarla.",
   "f311f5a32d4dec24": "Modelo disponible en {duration}",
-  "82c863fc509de21d": "Comprobando la disponibilidad del modelo"
+  "82c863fc509de21d": "Comprobando la disponibilidad del modelo",
+  "61a6422a50b51c9d": "Reinicio / agotamiento: {percent}%",
+  "c2aac1b30cbd7325": "Muestra el tiempo hasta el reinicio semanal como porcentaje del tiempo estimado hasta agotar la cuota.",
+  "c8fb8bb369023db2": "Proporción de agotamiento semanal"
 }

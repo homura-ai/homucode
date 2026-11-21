@@ -165,6 +165,11 @@ For providers routed through a [configured CLIProxyAPI hub](usage.md#connect-a-c
 the status line shows the hub's pooled usage. Each percentage uses the accounts that
 reported a current reading for that window, and the countdown shows the next reported reset.
 
+Enable **Weekly depletion ratio** in the Status line settings to compare time until the
+weekly reset with the projected time until quota runs out. Above 100% means quota is
+projected to run out first. A negative projected quota shows how far past the limit the
+current pace would take you before reset.
+
 To draw your own, set **Status line command** to any shell command: it receives Claude
 Code's status line JSON on stdin and runs in the thread's folder, so a script written for
 Claude Code's `statusLine` setting works unchanged. Its output shows as a line of text in

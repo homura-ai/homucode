@@ -5705,5 +5705,8 @@
   "f8c98c83ffb2fb6f": "Durée d’activité",
   "8f01f72ab87d0628": "Jetons",
   "24778ed4c9f8a51e": "{input} en entrée · {output} en sortie",
-  "f91047b9b24419e1": "{input} en entrée · {output} en sortie · {percent} % en cache"
+  "f91047b9b24419e1": "{input} en entrée · {output} en sortie · {percent} % en cache",
+  "c8fb8bb369023db2": "Ratio d’épuisement hebdomadaire",
+  "c2aac1b30cbd7325": "Affiche le temps avant la réinitialisation hebdomadaire en pourcentage du temps estimé avant l’épuisement du quota.",
+  "61a6422a50b51c9d": "Réinitialisation / épuisement {percent} %"
 }

@@ -12747,5 +12747,8 @@
   "5416694ec0dacb31": "Zeigt die Modelle und gemeldeten Nutzungslimits für die Umgebung dieses Threads an, wenn du mit der Maus über die Statuszeile fährst oder sie fokussierst.",
   "e9b5f7b109cc1ded": "Zeigt die Modelle und gemeldeten Nutzungslimits für die Umgebung dieses Threads an, wenn du mit der Maus über die Statuszeile fährst oder sie fokussierst.",
   "f311f5a32d4dec24": "Modell wieder verfügbar in {duration}",
-  "82c863fc509de21d": "Modellverfügbarkeit wird geprüft"
+  "82c863fc509de21d": "Modellverfügbarkeit wird geprüft",
+  "61a6422a50b51c9d": "Reset / Aufbrauchen {percent} %",
+  "c2aac1b30cbd7325": "Zeigt die Zeit bis zum wöchentlichen Reset als Prozentsatz der voraussichtlichen Zeit bis zum Aufbrauchen des Kontingents.",
+  "c8fb8bb369023db2": "Wöchentliches Aufbrauchverhältnis"
 }

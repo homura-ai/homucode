@@ -23,6 +23,7 @@ import {
 } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { StatusLineTypography } from "./StatusLineTypography";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
 import { useBarOverlap } from "../../components/ui/useBarInset";
@@ -177,7 +178,12 @@ export function ThreadStatusBar(
   const custom = enabled ? (config.settings.statusLineCommand ?? "") : "";
   const contextWindow = useThreadContextWindow(props.thread);
   const nowMs = useNowMinuteMs();
-  const source = { ...props.source, contextWindow, nowMs };
+  const source = {
+    ...props.source,
+    contextWindow,
+    nowMs,
+    showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,
+  };
   const command = useStatusLineCommand(props, source, custom);
   const stats = enabled && !custom ? buildStatusLineStats(source) : null;
   const lines = command === null ? [] : parseAnsiLines(command.text);
@@ -212,13 +218,15 @@ export function ThreadStatusBar(
         style={inline ? { maxWidth: stats === null ? 200 : availableWidth } : undefined}
       >
         {stats !== null ? (
-          <ThreadStatusDialStrip
-            stats={stats}
-            createdAt={props.createdAt}
-            nowMs={nowMs}
-            availableWidth={availableWidth}
-            fontScale={fontScale}
-          />
+          <StatusLineTypography>
+            <ThreadStatusDialStrip
+              stats={stats}
+              createdAt={props.createdAt}
+              nowMs={nowMs}
+              availableWidth={availableWidth}
+              fontScale={fontScale}
+            />
+          </StatusLineTypography>
         ) : firstLine !== undefined ? (
           <CommandLine line={firstLine} />
         ) : error ? (
@@ -249,7 +257,9 @@ export function ThreadStatusBar(
         <Sheet title={gt("Status line")} onClose={() => setExpanded(false)}>
           <ScreenScrollView contentContainerClassName="gap-1 px-4 py-4">
             {stats !== null ? (
-              <ThreadStatusDialDetails stats={stats} nowMs={nowMs} createdAt={props.createdAt} />
+              <StatusLineTypography>
+                <ThreadStatusDialDetails stats={stats} nowMs={nowMs} createdAt={props.createdAt} />
+              </StatusLineTypography>
             ) : (
               lines.map((line, index) => (
                 <CommandLine

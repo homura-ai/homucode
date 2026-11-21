@@ -1746,6 +1746,9 @@ export const ServerSettings = Schema.Struct({
   ghqCloneLayout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Shows a line in the top bar, like Claude Code's status line. */
   statusLineEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  statusLineShowWeeklyDepletionRatio: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   /** Shell command that reads Claude Code's status line JSON on stdin. Empty runs the built-in script. */
   statusLineCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
@@ -2222,6 +2225,7 @@ export const ServerSettingsPatch = Schema.Struct({
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   statusLineEnabled: Schema.optionalKey(Schema.Boolean),
+  statusLineShowWeeklyDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineCommand: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),

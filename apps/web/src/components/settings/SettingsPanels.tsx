@@ -642,6 +642,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.statusLineEnabled !== DEFAULT_UNIFIED_SETTINGS.statusLineEnabled
       ? ["Status line"]
       : []),
+    ...(settings.statusLineShowWeeklyDepletionRatio !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio
+      ? [gt("Weekly depletion ratio")]
+      : []),
     ...(settings.statusLineCommand !== DEFAULT_UNIFIED_SETTINGS.statusLineCommand
       ? ["Status line command"]
       : []),
@@ -784,6 +788,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       statusLineEnabled: DEFAULT_UNIFIED_SETTINGS.statusLineEnabled,
+      statusLineShowWeeklyDepletionRatio:
+        DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio,
       statusLineCommand: DEFAULT_UNIFIED_SETTINGS.statusLineCommand,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmTerminalClose: DEFAULT_UNIFIED_SETTINGS.confirmTerminalClose,

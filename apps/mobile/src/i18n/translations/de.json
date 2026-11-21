@@ -5711,5 +5711,8 @@
   "f8c98c83ffb2fb6f": "Laufzeit",
   "8f01f72ab87d0628": "Tokens",
   "24778ed4c9f8a51e": "{input} Eingabe · {output} Ausgabe",
-  "f91047b9b24419e1": "{input} Eingabe · {output} Ausgabe · {percent} % im Cache"
+  "f91047b9b24419e1": "{input} Eingabe · {output} Ausgabe · {percent} % im Cache",
+  "c8fb8bb369023db2": "Wöchentliches Aufbrauchverhältnis",
+  "c2aac1b30cbd7325": "Zeigt die Zeit bis zum wöchentlichen Reset als Prozentsatz der voraussichtlichen Zeit bis zum Aufbrauchen des Kontingents.",
+  "61a6422a50b51c9d": "Reset / Aufbrauchen {percent} %"
 }

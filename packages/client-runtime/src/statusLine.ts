@@ -14,6 +14,7 @@ import {
   collectProviderUsageLimits,
   projectedWindowUsedPercent,
   remainingPercent,
+  usageDepletionRatioPercent,
   usageLimitSourceAtEndpoint,
 } from "@t3tools/shared/usageLimits";
 
@@ -30,6 +31,7 @@ export interface StatusLineInputSource {
   readonly contextWindow: ContextWindowSnapshot | null;
   /** Usage limits are read as of this time. */
   readonly nowMs: number;
+  readonly showWeeklyDepletionRatio?: boolean;
 }
 
 export type StatusLineUsageSource = Pick<
@@ -40,6 +42,7 @@ export type StatusLineUsageSource = Pick<
 type StatusLineUsageWindow = ServerProviderUsageWindow & {
   readonly remainingPercent?: number;
   readonly projectedUsedPercent?: number | null;
+  readonly depletionRatioPercent?: number | null;
 };
 
 function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWindow): boolean {
@@ -102,6 +105,7 @@ function hubUsageWindows(
         usedPercent: window.usedPercent,
         remainingPercent: window.remainingPercent,
         projectedUsedPercent: window.projectedUsedPercent,
+        depletionRatioPercent: window.depletionRatioPercent,
         ...(resetsAt === undefined ? {} : { resetsAt }),
       };
     }) ?? []
@@ -242,6 +246,7 @@ export function statusLineInputModelName(
 export interface StatusLineLimit {
   readonly remainingPercent: number;
   readonly projectedRemainingPercent: number | null;
+  readonly depletionRatioPercent?: number;
   readonly resetsAtMs: number | null;
 }
 
@@ -262,12 +267,20 @@ export interface StatusLineStats {
   readonly outputTokens: number | null;
 }
 
-function limitFromWindow(window: StatusLineUsageWindow, nowMs: number): StatusLineLimit {
+function limitFromWindow(
+  window: StatusLineUsageWindow,
+  nowMs: number,
+  showDepletionRatio = false,
+): StatusLineLimit {
   const resetsAtMs = window.resetsAt === undefined ? Number.NaN : Date.parse(window.resetsAt);
   const projected = window.projectedUsedPercent ?? projectedWindowUsedPercent(window, nowMs);
+  const depletionRatio = showDepletionRatio
+    ? (window.depletionRatioPercent ?? usageDepletionRatioPercent(window.usedPercent, projected))
+    : null;
   return {
     remainingPercent: window.remainingPercent ?? remainingPercent(window),
     projectedRemainingPercent: projected === null ? null : Math.round(100 - projected),
+    ...(depletionRatio === null ? {} : { depletionRatioPercent: depletionRatio }),
     resetsAtMs: Number.isFinite(resetsAtMs) ? resetsAtMs : null,
   };
 }
@@ -276,9 +289,10 @@ function statusLineLimit(
   windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
   nowMs: number,
+  showDepletionRatio = false,
 ): StatusLineLimit | null {
   const window = findUsageWindow(windows, kind);
-  return window === undefined ? null : limitFromWindow(window, nowMs);
+  return window === undefined ? null : limitFromWindow(window, nowMs, showDepletionRatio);
 }
 
 /** The same facts `buildStatusLineInput` gives a script, typed for a client to draw. */
@@ -301,7 +315,7 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
     contextTokens: context?.usedTokens ?? null,
     contextMaxTokens: context?.maxTokens ?? null,
     fiveHour: statusLineLimit(windows, "session", source.nowMs),
-    weekly: statusLineLimit(windows, "weekly", source.nowMs),
+    weekly: statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
         ? Math.round(Math.min(1, cachedInputTokens / inputTokens) * 100)

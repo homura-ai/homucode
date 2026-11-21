@@ -161,7 +161,11 @@ function HomuCodeServerSettings() {
     !projectSelected && targets.every((target) => writable.has(target.environment.environmentId));
 
   const write = (
-    key: "statusLineEnabled" | "autoreviewEnabled" | "subagentsInheritParentPin",
+    key:
+      | "statusLineEnabled"
+      | "statusLineShowWeeklyDepletionRatio"
+      | "autoreviewEnabled"
+      | "subagentsInheritParentPin",
     enabled: boolean,
   ) => {
     if (
@@ -200,6 +204,21 @@ function HomuCodeServerSettings() {
             managedSettingReason(targets, ["statusLineEnabled"], resolve) !== undefined
           }
           onValueChange={(enabled) => write("statusLineEnabled", enabled)}
+        />
+        <SettingsSwitchRow
+          icon="timer"
+          label={gt("Weekly depletion ratio")}
+          subtitle={gt(
+            "Show the time until the weekly reset as a percentage of the time until quota is projected to run out.",
+          )}
+          value={uniformMobileSetting(targets, "statusLineShowWeeklyDepletionRatio")}
+          disabled={
+            !canWrite ||
+            pending ||
+            managedSettingReason(targets, ["statusLineShowWeeklyDepletionRatio"], resolve) !==
+              undefined
+          }
+          onValueChange={(enabled) => write("statusLineShowWeeklyDepletionRatio", enabled)}
         />
       </SettingsSection>
       {!projectSelected ? (

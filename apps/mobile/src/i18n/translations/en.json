@@ -5712,5 +5712,8 @@
   "f8c98c83ffb2fb6f": "Uptime",
   "8f01f72ab87d0628": "Tokens",
   "24778ed4c9f8a51e": "{input} in · {output} out",
-  "f91047b9b24419e1": "{input} in · {output} out · {percent}% cached"
+  "f91047b9b24419e1": "{input} in · {output} out · {percent}% cached",
+  "c8fb8bb369023db2": "Weekly depletion ratio",
+  "c2aac1b30cbd7325": "Show the time until the weekly reset as a percentage of the time until quota is projected to run out.",
+  "61a6422a50b51c9d": "Reset / depletion {percent}%"
 }

@@ -12755,5 +12755,8 @@
   "5416694ec0dacb31": "Visar modeller och rapporterade användningsgränser för den här trådens miljö när du håller pekaren över statusraden eller fokuserar på den.",
   "e9b5f7b109cc1ded": "Visar modeller och rapporterade användningsgränser för den här trådens miljö när du håller pekaren över statusraden eller fokuserar på den.",
   "f311f5a32d4dec24": "Modellens väntetid: {duration}",
-  "82c863fc509de21d": "Kontrollerar om modellen är tillgänglig"
+  "82c863fc509de21d": "Kontrollerar om modellen är tillgänglig",
+  "61a6422a50b51c9d": "Återställning / slut på kvot {percent} %",
+  "c2aac1b30cbd7325": "Visar tiden till veckans återställning som procent av tiden tills kvoten beräknas ta slut.",
+  "c8fb8bb369023db2": "Veckokvotens förbrukningskvot"
 }

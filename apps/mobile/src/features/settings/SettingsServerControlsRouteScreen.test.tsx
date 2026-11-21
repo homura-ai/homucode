@@ -306,6 +306,7 @@ describe("SettingsServerControlsRouteScreen", () => {
 
     for (const [label, key] of [
       ["Status line", "statusLineEnabled"],
+      ["Weekly depletion ratio", "statusLineShowWeeklyDepletionRatio"],
       ["Subagents inherit parent pin", "subagentsInheritParentPin"],
       ["Autoreviewers (not recommended)", "autoreviewEnabled"],
     ] as const) {
@@ -326,7 +327,7 @@ describe("SettingsServerControlsRouteScreen", () => {
     }
     mocks.readOnly.add("remote");
     act(() => root.render(<SettingsHomuCodeRouteScreen key="read-only" />));
-    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(3);
+    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(4);
   });
 
   it("sends a draft saved during a pending write once that write settles", async () => {

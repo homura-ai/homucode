@@ -175,12 +175,16 @@ function LimitDial(props: {
   const gt = useGT();
   const left = statusLineLimitRemaining(props.limit, props.nowMs);
   const note = limitNote(props.limit, props.nowMs, useMessages());
-  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remaining = gt("{percent}% remaining", { percent: remainingPercent });
   const projected =
     projectedRemainingPercent === null
       ? ""
       : gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent });
+  const depletionRatio =
+    depletionRatioPercent === undefined
+      ? null
+      : gt("Reset / depletion {percent}%", { percent: depletionRatioPercent });
   return (
     <Dial
       percent={remainingPercent}
@@ -192,10 +196,13 @@ function LimitDial(props: {
           <>
             <RotateCwIcon />
             {left}
+            {depletionRatioPercent === undefined ? null : (
+              <span className="ms-0.5 border-s ps-1">{depletionRatioPercent}%</span>
+            )}
           </>
         )
       }
-      label={[props.title, remaining, note, projected].filter(Boolean).join(", ")}
+      label={[props.title, remaining, note, projected, depletionRatio].filter(Boolean).join(", ")}
       className={`${props.className} ${statusLineLimitEnded(props.limit, props.nowMs) ? "opacity-50" : ""}`}
     />
   );
@@ -333,6 +340,7 @@ function Fact(props: {
     readonly projectedRemainingPercent?: number | null;
   };
   readonly dimmed?: boolean;
+  readonly details?: ReadonlyArray<string>;
   readonly children: ReactNode;
 }) {
   return (
@@ -357,6 +365,11 @@ function Fact(props: {
           />
         </span>
       )}
+      {props.details?.map((detail) => (
+        <span key={detail} className="text-2xs break-words text-muted-foreground tabular-nums">
+          {detail}
+        </span>
+      ))}
     </div>
   );
 }
@@ -368,18 +381,29 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = limitNote(props.limit, props.nowMs, useMessages());
-  const { remainingPercent, projectedRemainingPercent } = props.limit;
+  const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
       meter={{ percent: remainingPercent, kind: "limit", projectedRemainingPercent }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
+      details={[
+        ...(note === "" ? [] : [note]),
+        ...(projectedRemainingPercent === null
+          ? []
+          : [
+              gt("{percent}% projected remaining at reset", {
+                percent: projectedRemainingPercent,
+              }),
+            ]),
+        ...(depletionRatioPercent === undefined
+          ? []
+          : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
+      ]}
     >
-      {gt("{percent}% remaining", { percent: remainingPercent })}
-      {note === "" ? null : ` · ${note}`}
-      {projectedRemainingPercent === null
-        ? null
-        : ` · ${gt("{percent}% projected remaining at reset", { percent: projectedRemainingPercent })}`}
+      <span className="tabular-nums">
+        {gt("{percent}% remaining", { percent: remainingPercent })}
+      </span>
     </Fact>
   );
 }

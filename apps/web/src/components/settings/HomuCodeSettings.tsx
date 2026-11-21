@@ -419,6 +419,24 @@ function AgentBehaviorSettings() {
         />
         <SettingsRow
           serverScoped
+          settingKeys={["statusLineShowWeeklyDepletionRatio"]}
+          {...searchableSetting("status-line-weekly-depletion-ratio")}
+          description={gt(
+            "Show the time until the weekly reset as a percentage of the time until quota is projected to run out.",
+          )}
+          control={
+            <ScopedSwitch
+              settingKeys={["statusLineShowWeeklyDepletionRatio"]}
+              checked={settings.statusLineShowWeeklyDepletionRatio}
+              onCheckedChange={(checked) =>
+                updateSettings({ statusLineShowWeeklyDepletionRatio: Boolean(checked) })
+              }
+              aria-label={gt("Weekly depletion ratio")}
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
           settingKeys={["statusLineCommand"]}
           {...searchableSetting("status-line-command")}
           description={gt(

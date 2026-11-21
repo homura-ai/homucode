@@ -5711,5 +5711,8 @@
   "f8c98c83ffb2fb6f": "Aktiv tid",
   "8f01f72ab87d0628": "Token",
   "24778ed4c9f8a51e": "{input} in · {output} ut",
-  "f91047b9b24419e1": "{input} in · {output} ut · {percent} % från cache"
+  "f91047b9b24419e1": "{input} in · {output} ut · {percent} % från cache",
+  "c8fb8bb369023db2": "Veckokvotens förbrukningskvot",
+  "c2aac1b30cbd7325": "Visar tiden till veckans återställning som procent av tiden tills kvoten beräknas ta slut.",
+  "61a6422a50b51c9d": "Återställning / slut på kvot {percent} %"
 }

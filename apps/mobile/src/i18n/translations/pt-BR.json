@@ -5705,5 +5705,8 @@
   "f8c98c83ffb2fb6f": "Tempo de atividade",
   "8f01f72ab87d0628": "Tokens",
   "24778ed4c9f8a51e": "{input} de entrada · {output} de saída",
-  "f91047b9b24419e1": "{input} de entrada · {output} de saída · {percent}% em cache"
+  "f91047b9b24419e1": "{input} de entrada · {output} de saída · {percent}% em cache",
+  "c8fb8bb369023db2": "Proporção de esgotamento semanal",
+  "c2aac1b30cbd7325": "Mostra o tempo até a redefinição semanal como porcentagem do tempo previsto até o esgotamento da cota.",
+  "61a6422a50b51c9d": "Redefinição / esgotamento {percent}%"
 }

@@ -12747,5 +12747,8 @@
   "5416694ec0dacb31": "Affiche les modèles et les limites d’utilisation signalées pour l’environnement de ce fil lorsque vous survolez la barre d’état ou lui donnez le focus.",
   "e9b5f7b109cc1ded": "Affiche les modèles et les limites d’utilisation signalées pour l’environnement de ce fil lorsque vous survolez la barre d’état ou lui donnez le focus.",
   "f311f5a32d4dec24": "Modèle disponible dans {duration}",
-  "82c863fc509de21d": "Vérification de la disponibilité du modèle"
+  "82c863fc509de21d": "Vérification de la disponibilité du modèle",
+  "61a6422a50b51c9d": "Réinitialisation / épuisement {percent} %",
+  "c2aac1b30cbd7325": "Affiche le temps avant la réinitialisation hebdomadaire en pourcentage du temps estimé avant l’épuisement du quota.",
+  "c8fb8bb369023db2": "Ratio d’épuisement hebdomadaire"
 }
