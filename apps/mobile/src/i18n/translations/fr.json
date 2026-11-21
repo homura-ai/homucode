@@ -5691,5 +5691,19 @@
   "b59f1c1a0992ad7a": "Afficher MadoHomu dans la liste des fils d’accueil",
   "448af54674847a0f": "Ajoute une ligne MadoHomu lorsque la barre de navigation est masquée.",
   "4bf18286798b16c2": "Une vue centrée sur un projet. Son activation ajoute une icône MadoHomu distincte au lanceur d’applications.",
-  "aa8ef7cc9b76974e": "Afficher MadoHomu dans la liste des fils d’accueil"
+  "aa8ef7cc9b76974e": "Afficher MadoHomu dans la liste des fils d’accueil",
+  "be4df6b233322cc7": "période terminée",
+  "0c06d43230e8d09d": "réinitialisation dans {time}",
+  "eea52315fc30e0c9": "{title} utilisée à {percent} %",
+  "4fbfe1996e43e70d": "{title} utilisée à {percent} %, {note}",
+  "552207ca5f5fe465": "Contexte",
+  "caaef21e8722857d": "Mode rapide",
+  "9298ce608d7038fa": "Contexte utilisé à {percent} %, {context} jetons",
+  "5ab455b91b4b59e6": "Limite de 5 heures",
+  "98d90f0916373ea3": "Limite hebdomadaire",
+  "28f5fca3f81b6dfc": "semaine",
+  "f8c98c83ffb2fb6f": "Durée d’activité",
+  "8f01f72ab87d0628": "Jetons",
+  "24778ed4c9f8a51e": "{input} en entrée · {output} en sortie",
+  "f91047b9b24419e1": "{input} en entrée · {output} en sortie · {percent} % en cache"
 }

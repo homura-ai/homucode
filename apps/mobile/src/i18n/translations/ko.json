@@ -5677,5 +5677,19 @@
   "b59f1c1a0992ad7a": "홈 스레드 목록에 MadoHomu 표시",
   "448af54674847a0f": "탐색 레일이 숨겨져 있을 때 MadoHomu 항목을 추가합니다.",
   "4bf18286798b16c2": "프로젝트 하나에 집중할 수 있는 화면입니다. 활성화하면 앱 런처에 별도의 MadoHomu 아이콘이 추가됩니다.",
-  "aa8ef7cc9b76974e": "홈 스레드 목록에 MadoHomu 표시"
+  "aa8ef7cc9b76974e": "홈 스레드 목록에 MadoHomu 표시",
+  "be4df6b233322cc7": "기간 종료",
+  "0c06d43230e8d09d": "{time} 후 초기화",
+  "eea52315fc30e0c9": "{title} {percent}% 사용",
+  "4fbfe1996e43e70d": "{title} {percent}% 사용, {note}",
+  "552207ca5f5fe465": "컨텍스트",
+  "caaef21e8722857d": "빠른 모드",
+  "9298ce608d7038fa": "컨텍스트 {percent}% 사용, {context} 토큰",
+  "5ab455b91b4b59e6": "5시간 한도",
+  "98d90f0916373ea3": "주간 한도",
+  "28f5fca3f81b6dfc": "주",
+  "f8c98c83ffb2fb6f": "경과 시간",
+  "8f01f72ab87d0628": "토큰",
+  "24778ed4c9f8a51e": "입력 {input} · 출력 {output}",
+  "f91047b9b24419e1": "입력 {input} · 출력 {output} · 캐시 {percent}%"
 }

@@ -1,11 +1,12 @@
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useGT } from "gt-react-native";
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import { View } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { ThreadStatusBar, type ThreadStatusSource } from "./ThreadStatusBar";
 import { LocalPreviewScreen } from "../browser/LocalPreviewRouteScreen";
 import { DevicePreviewScreen } from "../devices/DevicePreviewRouteScreen";
 import {
@@ -25,14 +26,19 @@ export type ThreadInspectorPresentation =
   | { readonly onClose: () => void };
 
 export function ThreadInspectorHeader(
-  props: ThreadInspectorPresentation & { readonly title: string; readonly subtitle?: string },
+  props: ThreadInspectorPresentation & {
+    readonly title: string;
+    readonly subtitle?: string;
+    readonly statusLine?: ThreadStatusSource | undefined;
+  },
 ) {
   const gt = useGT();
-  if ("onMaximize" in props) {
-    return (
+  const renderHeader = (titleAccessory?: ReactElement) =>
+    "onMaximize" in props ? (
       <AppBar
         title={props.title}
         subtitle={props.subtitle}
+        titleAccessory={titleAccessory ?? null}
         actions={[
           {
             accessibilityLabel: gt("Maximize thread"),
@@ -41,14 +47,22 @@ export function ThreadInspectorHeader(
           },
         ]}
       />
+    ) : (
+      <SheetHeader
+        title={props.title}
+        subtitle={props.subtitle}
+        onClose={props.onClose}
+        accessibilityLabel={gt("Close thread")}
+        titleAccessory={titleAccessory ?? null}
+      />
     );
-  }
+  if (props.statusLine === undefined) return renderHeader();
   return (
-    <SheetHeader
-      title={props.title}
-      subtitle={props.subtitle}
-      onClose={props.onClose}
-      accessibilityLabel={gt("Close thread")}
+    <ThreadStatusBar
+      key={`${props.statusLine.environmentId}:${props.statusLine.source.threadId}`}
+      {...props.statusLine}
+      controlsWidth={"onMaximize" in props ? 96 : 48}
+      renderHeader={renderHeader}
     />
   );
 }

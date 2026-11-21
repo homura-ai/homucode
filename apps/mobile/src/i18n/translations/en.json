@@ -5698,5 +5698,19 @@
   "b59f1c1a0992ad7a": "Show MadoHomu in the home thread list",
   "448af54674847a0f": "Add a MadoHomu row when the navigation rail is hidden.",
   "4bf18286798b16c2": "A focused view for one project. Enabling it adds a separate MadoHomu icon to your app launcher.",
-  "aa8ef7cc9b76974e": "show MadoHomu in the home thread list"
+  "aa8ef7cc9b76974e": "show MadoHomu in the home thread list",
+  "be4df6b233322cc7": "window ended",
+  "0c06d43230e8d09d": "resets in {time}",
+  "eea52315fc30e0c9": "{title} {percent}% used",
+  "4fbfe1996e43e70d": "{title} {percent}% used, {note}",
+  "552207ca5f5fe465": "Context",
+  "caaef21e8722857d": "Fast mode",
+  "9298ce608d7038fa": "Context {percent}% used, {context} tokens",
+  "5ab455b91b4b59e6": "5-hour limit",
+  "98d90f0916373ea3": "Weekly limit",
+  "28f5fca3f81b6dfc": "week",
+  "f8c98c83ffb2fb6f": "Uptime",
+  "8f01f72ab87d0628": "Tokens",
+  "24778ed4c9f8a51e": "{input} in · {output} out",
+  "f91047b9b24419e1": "{input} in · {output} out · {percent}% cached"
 }

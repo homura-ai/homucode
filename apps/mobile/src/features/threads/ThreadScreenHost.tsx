@@ -8,6 +8,7 @@ import {
 } from "react";
 import { View } from "react-native";
 
+import { SetThreadBarInsetConsumed, ThreadBarInsetConsumed } from "./thread-status-bar-inset";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 
@@ -51,12 +52,17 @@ function ThreadScreenOutlet() {
 // the keyboard host, or the editor. Publish before paint to avoid an intermediate frame.
 export function ThreadScreenHost({ children }: { readonly children: ReactNode }) {
   const [store] = useState(createThreadScreenStore);
+  const [barInsetConsumed, setBarInsetConsumed] = useState(false);
   return (
     <ThreadScreenContext.Provider value={store}>
-      {children}
-      <View className="flex-1 bg-screen android:bg-header">
-        <ThreadScreenOutlet />
-      </View>
+      <SetThreadBarInsetConsumed value={setBarInsetConsumed}>
+        {children}
+        <ThreadBarInsetConsumed value={barInsetConsumed}>
+          <View className="flex-1 bg-screen android:bg-header">
+            <ThreadScreenOutlet />
+          </View>
+        </ThreadBarInsetConsumed>
+      </SetThreadBarInsetConsumed>
     </ThreadScreenContext.Provider>
   );
 }

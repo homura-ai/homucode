@@ -4,6 +4,7 @@ import { useGT } from "gt-react-native";
 import { use, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
+import { AppBarTitle } from "./AppBarTitle";
 import type { AppSymbolName } from "./AppSymbol";
 import { NativeAppBar } from "./NativeAppBar.android";
 import { IconButton } from "./IconButton";
@@ -39,6 +40,7 @@ export function AndroidHeaderIconButton(props: {
 export function AndroidScreenHeader(props: {
   readonly title: string;
   readonly titleContent?: ReactNode;
+  readonly titleAccessory?: ReactNode;
   readonly subtitle?: string | null;
   readonly actions?: ReadonlyArray<AndroidHeaderAction>;
   readonly leading?: ReactNode;
@@ -96,6 +98,16 @@ export function AndroidScreenHeader(props: {
           props.titleContent ? (
             <RNHostView matchContents={{ vertical: true }}>
               <View collapsable={false}>{props.titleContent}</View>
+            </RNHostView>
+          ) : props.titleAccessory ? (
+            <RNHostView matchContents={{ vertical: true }}>
+              <View collapsable={false}>
+                <AppBarTitle
+                  title={props.title}
+                  subtitle={props.subtitle}
+                  accessory={props.titleAccessory}
+                />
+              </View>
             </RNHostView>
           ) : !props.subtitle ? (
             <NativeText

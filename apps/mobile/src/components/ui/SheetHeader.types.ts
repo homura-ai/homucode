@@ -22,6 +22,7 @@ export type SheetHeaderProps = SheetDismissAction & {
   readonly presentation?: "native" | "inline";
   readonly actions?: ReadonlyArray<AppBarAction>;
   readonly menus?: ReadonlyArray<AppBarMenu>;
+  readonly titleAccessory?: ReactNode;
   readonly trailing?: ReactNode;
 };
 

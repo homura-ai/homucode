@@ -170,9 +170,9 @@ place of the dials. Colors take the matching colors of your theme, percentages a
 as bars, and when room is short the version, `user@host` and the directory are left out
 first.
 
-On mobile the status line is a line of text under the composer: your command's output, or
-without one the [01-1/statusline](https://github.com/01-1/statusline) script on the thread's
-machine, which needs `bash` and `jq`.
+On mobile, the status line sits beside the title when there is room and appears as a compact
+button beneath the top bar on narrower screens. Tap it for the full details. A custom
+command displays its text in the same place, with the full output available on tap.
 
 ## Quote an assistant response
 

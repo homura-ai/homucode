@@ -76,6 +76,7 @@ export interface AppBarProps {
   readonly title: string;
   /** Android: replaces the title text, such as the brand title. iOS ignores it. */
   readonly titleContent?: ReactNode;
+  readonly titleAccessory?: ReactNode;
   readonly subtitle?: string | null;
   readonly actions?: ReadonlyArray<AppBarAction>;
   /**

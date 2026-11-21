@@ -5691,5 +5691,19 @@
   "b59f1c1a0992ad7a": "Mostrar MadoHomu na lista de conversas da tela inicial",
   "448af54674847a0f": "Adiciona uma linha do MadoHomu quando a barra de navegação está oculta.",
   "4bf18286798b16c2": "Uma lista focada em um único projeto. Ao ativar o recurso, um ícone separado do MadoHomu aparece no iniciador de apps.",
-  "aa8ef7cc9b76974e": "Mostrar MadoHomu na lista de conversas da tela inicial"
+  "aa8ef7cc9b76974e": "Mostrar MadoHomu na lista de conversas da tela inicial",
+  "be4df6b233322cc7": "período encerrado",
+  "0c06d43230e8d09d": "reinicia em {time}",
+  "eea52315fc30e0c9": "{title}: {percent}% usado",
+  "4fbfe1996e43e70d": "{title}: {percent}% usado, {note}",
+  "552207ca5f5fe465": "Contexto",
+  "caaef21e8722857d": "Modo rápido",
+  "9298ce608d7038fa": "Contexto: {percent}% usado, {context} tokens",
+  "5ab455b91b4b59e6": "Limite de 5 horas",
+  "98d90f0916373ea3": "Limite semanal",
+  "28f5fca3f81b6dfc": "semana",
+  "f8c98c83ffb2fb6f": "Tempo de atividade",
+  "8f01f72ab87d0628": "Tokens",
+  "24778ed4c9f8a51e": "{input} de entrada · {output} de saída",
+  "f91047b9b24419e1": "{input} de entrada · {output} de saída · {percent}% em cache"
 }

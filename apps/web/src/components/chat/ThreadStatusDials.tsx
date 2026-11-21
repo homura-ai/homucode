@@ -2,8 +2,13 @@ import { resolveProvidersForCwd } from "@t3tools/client-runtime/providerSkills";
 import { msg, useGT, useMessages } from "gt-react";
 import {
   buildStatusLineModelUsage,
-  formatStatusLineSpan,
   formatStatusLineTokens,
+  statusLineEffortBars,
+  statusLineGaugePercent,
+  statusLineGaugeTone,
+  statusLineLimitEnded,
+  statusLineLimitRemaining,
+  statusLineUptime,
   type StatusLineLimit,
   type StatusLineStats,
   type StatusLineUsageSource,
@@ -20,45 +25,25 @@ import {
 import type { ReactNode } from "react";
 import type { MessageResolver } from "../../i18n/messages";
 
-const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 const EFFORT_BAR_HEIGHTS = ["h-1", "h-1.5", "h-2", "h-2.5", "h-3"];
 
-// A long context window is fine half full; a usage limit half spent is worth a look.
-const CONTEXT_ALERTS = [70, 90] as const;
-const LIMIT_ALERTS = [50, 80] as const;
-
-type Alerts = readonly [warnAt: number, errorAt: number];
-
-function gaugeColor(percent: number, [warnAt, errorAt]: Alerts): string {
-  if (percent >= errorAt) return "var(--destructive)";
-  return percent >= warnAt ? "var(--warning-foreground)" : "var(--success-foreground)";
-}
-
-// Past its reset time a limit's number is the old window's, until the provider reports again.
-function windowEnded(limit: StatusLineLimit, nowMs: number): boolean {
-  return limit.resetsAtMs !== null && limit.resetsAtMs <= nowMs;
-}
-
-function resetsIn(limit: StatusLineLimit, nowMs: number): string | null {
-  return limit.resetsAtMs === null || windowEnded(limit, nowMs)
-    ? null
-    : formatStatusLineSpan(limit.resetsAtMs - nowMs);
+function gaugeColor(percent: number, kind: "context" | "limit"): string {
+  return {
+    error: "var(--destructive)",
+    warning: "var(--warning-foreground)",
+    success: "var(--success-foreground)",
+  }[statusLineGaugeTone(percent, kind)];
 }
 
 function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolver): string {
-  if (windowEnded(limit, nowMs)) return resolve(msg("window ended"));
-  const left = resetsIn(limit, nowMs);
+  if (statusLineLimitEnded(limit, nowMs)) return resolve(msg("window ended"));
+  const left = statusLineLimitRemaining(limit, nowMs);
   return left === null ? "" : resolve(msg("resets in {time}", { time: left }));
-}
-
-function uptimeText(createdAt: string | null, nowMs: number): string | null {
-  const startedMs = createdAt === null ? Number.NaN : Date.parse(createdAt);
-  return Number.isFinite(startedMs) ? formatStatusLineSpan(nowMs - startedMs) : null;
 }
 
 /** Effort as signal bars, one lit for low and all five for max. Other levels are written out. */
 function Effort(props: { readonly effort: string }) {
-  const level = props.effort.startsWith("ultra") ? 5 : EFFORT_LEVELS.indexOf(props.effort) + 1;
+  const level = statusLineEffortBars(props.effort);
   if (level === 0) {
     return <span className="font-normal text-2xs text-muted-foreground">{props.effort}</span>;
   }
@@ -122,21 +107,21 @@ function Ring(props: { readonly percent: number; readonly alarm: boolean }) {
 /** A ring filled to `percent` with the number inside, then what it measures and a detail. */
 function Dial(props: {
   readonly percent: number;
-  readonly alerts: Alerts;
+  readonly kind: "context" | "limit";
   readonly name: string;
   readonly detail: ReactNode;
   readonly label: string;
   readonly className?: string;
 }) {
-  const percent = Math.max(0, Math.min(100, Math.round(props.percent)));
+  const percent = statusLineGaugePercent(props.percent);
   return (
     <span
       role="img"
       aria-label={props.label}
       className={`flex shrink-0 items-center gap-1.5 ${props.className ?? ""}`}
-      style={{ color: gaugeColor(percent, props.alerts) }}
+      style={{ color: gaugeColor(percent, props.kind) }}
     >
-      <Ring percent={percent} alarm={percent >= props.alerts[1]} />
+      <Ring percent={percent} alarm={statusLineGaugeTone(percent, props.kind) === "error"} />
       <span className="grid @max-[20rem]/dials:hidden">
         <span className="font-medium text-2xs/3.5 text-foreground">{props.name}</span>
         {props.detail === null ? null : (
@@ -157,12 +142,12 @@ function LimitDial(props: {
   readonly className: string;
 }) {
   const gt = useGT();
-  const left = resetsIn(props.limit, props.nowMs);
+  const left = statusLineLimitRemaining(props.limit, props.nowMs);
   const note = limitNote(props.limit, props.nowMs, useMessages());
   return (
     <Dial
       percent={props.limit.usedPercent}
-      alerts={LIMIT_ALERTS}
+      kind="limit"
       name={props.name}
       detail={
         left === null ? null : (
@@ -181,7 +166,7 @@ function LimitDial(props: {
               note,
             })
       }
-      className={`${props.className} ${windowEnded(props.limit, props.nowMs) ? "opacity-50" : ""}`}
+      className={`${props.className} ${statusLineLimitEnded(props.limit, props.nowMs) ? "opacity-50" : ""}`}
     />
   );
 }
@@ -214,7 +199,7 @@ export function StatusDialStrip(props: {
 }) {
   const gt = useGT();
   const { stats, nowMs } = props;
-  const uptime = uptimeText(props.createdAt, nowMs);
+  const uptime = statusLineUptime(props.createdAt, nowMs);
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
   const hasDial = stats.contextPercent !== null || stats.fiveHour !== null || stats.weekly !== null;
   return (
@@ -246,7 +231,7 @@ export function StatusDialStrip(props: {
         ) : (
           <Dial
             percent={stats.contextPercent}
-            alerts={CONTEXT_ALERTS}
+            kind="context"
             name={gt("context", { $context: "model context window" })}
             detail={context}
             label={gt("Context {percent}% used, {context} tokens", {
@@ -312,7 +297,7 @@ export function StatusDialStrip(props: {
 
 function Fact(props: {
   readonly name: string;
-  readonly meter?: { readonly percent: number; readonly alerts: Alerts };
+  readonly meter?: { readonly percent: number; readonly kind: "context" | "limit" };
   readonly dimmed?: boolean;
   readonly children: ReactNode;
 }) {
@@ -324,7 +309,7 @@ function Fact(props: {
         <span
           aria-hidden
           className="mt-0.5 h-1 overflow-hidden rounded-full bg-current/20"
-          style={{ color: gaugeColor(props.meter.percent, props.meter.alerts) }}
+          style={{ color: gaugeColor(props.meter.percent, props.meter.kind) }}
         >
           <span
             className="block h-full rounded-full bg-current"
@@ -345,8 +330,8 @@ function LimitFact(props: {
   return (
     <Fact
       name={props.name}
-      meter={{ percent: props.limit.usedPercent, alerts: LIMIT_ALERTS }}
-      dimmed={windowEnded(props.limit, props.nowMs)}
+      meter={{ percent: props.limit.usedPercent, kind: "limit" }}
+      dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
     >
       {props.limit.usedPercent}%{note === "" ? null : ` · ${note}`}
     </Fact>
@@ -361,7 +346,7 @@ export function StatusDialCard(props: {
 }) {
   const gt = useGT();
   const { stats, nowMs } = props;
-  const uptime = uptimeText(props.createdAt, nowMs);
+  const uptime = statusLineUptime(props.createdAt, nowMs);
   const model = [stats.modelName, stats.effort, stats.fastMode ? "fast" : null].filter(Boolean);
   return (
     <div className="grid gap-3 tabular-nums">
@@ -371,7 +356,7 @@ export function StatusDialCard(props: {
             name={gt("Context", { $context: "model context window" })}
             {...(stats.contextPercent === null
               ? {}
-              : { meter: { percent: stats.contextPercent, alerts: CONTEXT_ALERTS } })}
+              : { meter: { percent: stats.contextPercent, kind: "context" } })}
           >
             {stats.contextPercent === null ? null : `${stats.contextPercent}% · `}
             {formatStatusLineTokens(stats.contextTokens)}

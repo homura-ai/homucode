@@ -5682,5 +5682,19 @@
   "b59f1c1a0992ad7a": "在主页的会话列表中显示 MadoHomu",
   "448af54674847a0f": "导航栏隐藏时，添加一行 MadoHomu。",
   "4bf18286798b16c2": "专注于单个项目的视图。启用后，应用启动器中会添加独立的 MadoHomu 图标。",
-  "aa8ef7cc9b76974e": "在主页的会话列表中显示 MadoHomu"
+  "aa8ef7cc9b76974e": "在主页的会话列表中显示 MadoHomu",
+  "be4df6b233322cc7": "周期已结束",
+  "0c06d43230e8d09d": "{time}后重置",
+  "eea52315fc30e0c9": "{title}已用 {percent}%",
+  "4fbfe1996e43e70d": "{title}已用 {percent}%，{note}",
+  "552207ca5f5fe465": "上下文",
+  "caaef21e8722857d": "快速模式",
+  "9298ce608d7038fa": "上下文已用 {percent}%，共 {context} 个词元",
+  "5ab455b91b4b59e6": "5 小时限额",
+  "98d90f0916373ea3": "每周限额",
+  "28f5fca3f81b6dfc": "周",
+  "f8c98c83ffb2fb6f": "运行时长",
+  "8f01f72ab87d0628": "词元",
+  "24778ed4c9f8a51e": "输入 {input} · 输出 {output}",
+  "f91047b9b24419e1": "输入 {input} · 输出 {output} · {percent}% 命中缓存"
 }

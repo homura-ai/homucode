@@ -1033,10 +1033,27 @@ function ThreadRouteContent(
     selectedThread === null ? "" : scopedThreadKey(selectedThread.environmentId, selectedThread.id),
     connectionStatusLabel !== null ? connectionStatusLabel : threadSyncLabel,
   );
+  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const statusLine =
+    environmentId && threadId && selectedThread
+      ? {
+          environmentId,
+          createdAt: selectedThread.createdAt,
+          thread: selectedThreadDetailRef,
+          source: {
+            threadId,
+            cwd: selectedThreadCwd,
+            modelSelection: (selectedThreadWithDraftSettings ?? selectedThread).modelSelection,
+            providers: serverConfig?.providers ?? [],
+            usageLimitSources: serverConfig?.usageLimitSources ?? [],
+          },
+        }
+      : undefined;
   const inspectorHeader = props.inspectorPresentation ? (
     <ThreadInspectorHeader
       title={selectedThread?.title ?? gt("Thread")}
       subtitle={threadStatusLabel ?? undefined}
+      statusLine={statusLine}
       {...props.inspectorPresentation}
     />
   ) : null;
@@ -1049,7 +1066,6 @@ function ThreadRouteContent(
     );
   }
 
-  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const threadHeaderProps = {
     title: selectedThread.title,
     subtitle: threadStatusLabel ?? headerSubtitle,
@@ -1058,6 +1074,7 @@ function ThreadRouteContent(
     inspectorMode,
     onOpenFilesInspector: handleOpenFilesInspector,
     ...(props.onReturnToThread ? { onReturnToThread: props.onReturnToThread } : {}),
+    statusLine,
     onFindInThread:
       serverConfig?.threadFind === true
         ? () => openThreadFind(scopedThreadKey(selectedThread.environmentId, selectedThread.id))

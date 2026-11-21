@@ -5697,5 +5697,19 @@
   "b59f1c1a0992ad7a": "Visa MadoHomu i trådlistan på startsidan",
   "448af54674847a0f": "Lägger till en rad för MadoHomu när navigeringsfältet är dolt.",
   "4bf18286798b16c2": "En fokuserad vy för ett projekt. När du aktiverar den får MadoHomu en egen ikon i appstartaren.",
-  "aa8ef7cc9b76974e": "Visa MadoHomu i trådlistan på startsidan"
+  "aa8ef7cc9b76974e": "Visa MadoHomu i trådlistan på startsidan",
+  "be4df6b233322cc7": "perioden har löpt ut",
+  "0c06d43230e8d09d": "återställs om {time}",
+  "eea52315fc30e0c9": "{title}: {percent} % använt",
+  "4fbfe1996e43e70d": "{title}: {percent} % använt, {note}",
+  "552207ca5f5fe465": "Kontext",
+  "caaef21e8722857d": "Snabbläge",
+  "9298ce608d7038fa": "Kontext: {percent} % använt, {context} token",
+  "5ab455b91b4b59e6": "5-timmarsgräns",
+  "98d90f0916373ea3": "Veckogräns",
+  "28f5fca3f81b6dfc": "vecka",
+  "f8c98c83ffb2fb6f": "Aktiv tid",
+  "8f01f72ab87d0628": "Token",
+  "24778ed4c9f8a51e": "{input} in · {output} ut",
+  "f91047b9b24419e1": "{input} in · {output} ut · {percent} % från cache"
 }

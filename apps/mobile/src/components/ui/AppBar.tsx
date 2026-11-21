@@ -1,5 +1,6 @@
 import { useGT, useLocale, useMessages } from "gt-react-native";
 
+import { renderAppBarTitle } from "./AppBarTitle";
 import { Toolbar } from "./Toolbar";
 import { AppActivityIndicator } from "./AppActivityIndicator";
 import type { HeaderBarButtonMailSearchToolbarItem, SearchBarCommands } from "react-native-screens";
@@ -157,7 +158,13 @@ export function AppBar(props: AppBarProps) {
   return (
     <>
       <NativeStackScreenOptions
-        optionsVersion={[props.optionsVersion, compactSearch ? menu : undefined, locale]}
+        optionsVersion={[
+          props.optionsVersion,
+          compactSearch ? menu : undefined,
+          locale,
+          props.titleAccessory,
+          props.subtitle,
+        ]}
         options={{
           headerShown: true,
           headerBackVisible:
@@ -167,7 +174,18 @@ export function AppBar(props: AppBarProps) {
             !(props.guardBack && props.onBack),
           ...(props.guardBack ? { gestureEnabled: false } : undefined),
           title: props.title,
-          unstable_headerSubtitle: props.subtitle || undefined,
+          unstable_headerSubtitle: props.titleAccessory ? undefined : props.subtitle || undefined,
+          ...(props.titleAccessory === undefined
+            ? {}
+            : {
+                headerTitle: props.titleAccessory
+                  ? renderAppBarTitle({
+                      title: props.title,
+                      subtitle: props.subtitle,
+                      accessory: props.titleAccessory,
+                    })
+                  : undefined,
+              }),
           ...(props.matchSearchSurface
             ? { contentStyle: { backgroundColor: themeVariables["--color-sheet-solid"] } }
             : undefined),

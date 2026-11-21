@@ -1,6 +1,8 @@
 import { useGT, useMessages } from "gt-react-native";
+import type { ReactElement } from "react";
 
 import { AppBar } from "../../components/ui/AppBar";
+import { ThreadStatusBar, type ThreadStatusSource } from "./ThreadStatusBar";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
 import {
   useAdaptiveWorkspaceLayout,
@@ -20,6 +22,7 @@ export function ThreadHeader(props: {
   readonly gitControls: ThreadGitControlsProps;
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
+  readonly statusLine?: ThreadStatusSource | undefined;
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
@@ -62,7 +65,7 @@ export function ThreadHeader(props: {
     ...[gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null),
   ];
 
-  return (
+  const renderHeader = (titleAccessory?: ReactElement) => (
     <AppBar
       title={props.title}
       subtitle={props.subtitle}
@@ -79,7 +82,17 @@ export function ThreadHeader(props: {
       }
       actions={actions}
       menus={menus}
+      titleAccessory={titleAccessory ?? null}
       hideBottomBorder
+    />
+  );
+  if (props.statusLine === undefined) return renderHeader();
+  return (
+    <ThreadStatusBar
+      key={`${props.statusLine.environmentId}:${props.statusLine.source.threadId}`}
+      {...props.statusLine}
+      controlsWidth={48 * (2 + actions.length + menus.length)}
+      renderHeader={renderHeader}
     />
   );
 }

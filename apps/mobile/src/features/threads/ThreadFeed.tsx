@@ -134,6 +134,7 @@ import { isDuoDevice } from "../../lib/device-type";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -218,6 +219,7 @@ import { getReviewSectionIdForCheckpoint } from "../review/reviewModel";
 import { setReviewSelectedSectionId } from "../review/reviewState";
 import { Menu } from "../../components/ui/Menu";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
+import { ThreadBarInsetConsumed } from "./thread-status-bar-inset";
 import { useBarInset, useContentTopInset } from "../../components/ui/useBarInset";
 import { copyPromptLink } from "../prompt-links/prompt-link-actions";
 import { parseReviewCommentMessageSegments } from "../review/reviewCommentSelection";
@@ -3353,8 +3355,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const usesNativeAutomaticInsets =
     props.usesAutomaticContentInsets === true && Platform.OS === "ios";
   // Without the native contentInset, a list-header spacer clears the bar the column lays content under.
-  const topContentInset = usesNativeAutomaticInsets ? 0 : columnTopInset;
-  const anchorTopInset = usesNativeAutomaticInsets ? barInset : topContentInset;
+  const barInsetConsumed = useContext(ThreadBarInsetConsumed);
+  const topContentInset = usesNativeAutomaticInsets || barInsetConsumed ? 0 : columnTopInset;
+  const anchorTopInset =
+    usesNativeAutomaticInsets && !barInsetConsumed ? barInset : topContentInset;
 
   const theme = useUniwindTheme();
   const iconSubtleColor = theme["--color-icon-subtle"];

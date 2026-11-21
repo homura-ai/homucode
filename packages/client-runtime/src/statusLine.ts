@@ -289,6 +289,41 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
   };
 }
 
+const STATUS_LINE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+
+export function statusLineEffortBars(effort: string): number {
+  return effort.startsWith("ultra") ? 5 : STATUS_LINE_EFFORT_LEVELS.indexOf(effort) + 1;
+}
+
+export function statusLineGaugePercent(percent: number): number {
+  return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+export function statusLineGaugeTone(
+  percent: number,
+  kind: "context" | "limit",
+): "success" | "warning" | "error" {
+  // A long context window is fine half full; a usage limit half spent is worth a look.
+  const [warning, error] = kind === "context" ? [70, 90] : [50, 80];
+  if (percent >= error) return "error";
+  return percent >= warning ? "warning" : "success";
+}
+
+export function statusLineLimitEnded(limit: StatusLineLimit, nowMs: number): boolean {
+  return limit.resetsAtMs !== null && limit.resetsAtMs <= nowMs;
+}
+
+export function statusLineLimitRemaining(limit: StatusLineLimit, nowMs: number): string | null {
+  return limit.resetsAtMs === null || statusLineLimitEnded(limit, nowMs)
+    ? null
+    : formatStatusLineSpan(limit.resetsAtMs - nowMs);
+}
+
+export function statusLineUptime(createdAt: string | null, nowMs: number): string | null {
+  const startedMs = createdAt === null ? Number.NaN : Date.parse(createdAt);
+  return Number.isFinite(startedMs) ? formatStatusLineSpan(nowMs - startedMs) : null;
+}
+
 /** A token count the way the status line writes it: `588`, `68.8k`, `341k`, `1.2M`. */
 export function formatStatusLineTokens(tokens: number): string {
   const short = (value: number) => value.toFixed(1).replace(/\.0$/, "");

@@ -49,6 +49,7 @@ export function SheetHeader(props: SheetHeaderProps) {
         sheet={props.presentation === "inline"}
         title={props.title}
         subtitle={props.subtitle}
+        titleAccessory={props.titleAccessory}
         actions={props.actions}
         menus={props.menus}
         leading={

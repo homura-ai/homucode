@@ -5691,5 +5691,19 @@
   "b59f1c1a0992ad7a": "Mostrar MadoHomu en la lista de hilos de inicio",
   "448af54674847a0f": "Añade una fila de MadoHomu cuando la barra de navegación está oculta.",
   "4bf18286798b16c2": "Una vista centrada en un proyecto. Al activarla, se añade un icono de MadoHomu al iniciador de aplicaciones.",
-  "aa8ef7cc9b76974e": "Mostrar MadoHomu en la lista de hilos de inicio"
+  "aa8ef7cc9b76974e": "Mostrar MadoHomu en la lista de hilos de inicio",
+  "be4df6b233322cc7": "periodo finalizado",
+  "0c06d43230e8d09d": "se restablece en {time}",
+  "eea52315fc30e0c9": "{title}, {percent} % usado",
+  "4fbfe1996e43e70d": "{title}, {percent} % usado, {note}",
+  "552207ca5f5fe465": "Contexto",
+  "caaef21e8722857d": "Modo rápido",
+  "9298ce608d7038fa": "Contexto: {percent} % usado, {context} tokens",
+  "5ab455b91b4b59e6": "Límite de 5 horas",
+  "98d90f0916373ea3": "Límite semanal",
+  "28f5fca3f81b6dfc": "semana",
+  "f8c98c83ffb2fb6f": "Tiempo activo",
+  "8f01f72ab87d0628": "Tokens",
+  "24778ed4c9f8a51e": "{input} de entrada · {output} de salida",
+  "f91047b9b24419e1": "{input} de entrada · {output} de salida · {percent} % en caché"
 }
