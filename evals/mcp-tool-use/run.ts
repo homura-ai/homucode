@@ -2085,7 +2085,7 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
     typeof input.command === "string" &&
     !(STATIC_KEYBINDING_COMMANDS as ReadonlyArray<unknown>).includes(input.command)
   ) {
-    return failed(unknownKeybindingCommandMessage());
+    return failed(unknownKeybindingCommandMessage("/home/user/.t3/userdata/keybindings.json"));
   }
   // A pasted secret is saved without a card, so a mocked card outcome does not apply.
   if (mock !== undefined && mock !== "default" && !pastedSecret(name, input)) {

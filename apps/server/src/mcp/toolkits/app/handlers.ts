@@ -9,6 +9,7 @@ import { compileResolvedKeybindingRule } from "@t3tools/shared/keybindings";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as CheckpointDiffQuery from "../../../checkpointing/CheckpointDiffQuery.ts";
+import * as ServerConfig from "../../../config.ts";
 import * as Keybindings from "../../../keybindings.ts";
 import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -26,8 +27,8 @@ export const DIFF_PAGE_CHARS = 40_000;
 const decodeRemoveKeybinding = Schema.decodeUnknownEffect(ServerRemoveKeybindingInput);
 const decodeUpsertKeybinding = Schema.decodeUnknownEffect(ServerUpsertKeybindingInput);
 
-export const unknownKeybindingCommandMessage = () =>
-  `This tool binds only built-in commands. Valid: ${STATIC_KEYBINDING_COMMANDS.join(", ")}. A script (\`user.<name>.run\` or \`bash:<command>\`) goes in \`~/.t3/userdata/keybindings.json\` instead; this tool's description says how.`;
+export const unknownKeybindingCommandMessage = (keybindingsPath: string) =>
+  `This tool binds only built-in commands. Valid: ${STATIC_KEYBINDING_COMMANDS.join(", ")}. A script (\`user.<name>.run\` or \`bash:<command>\`) goes in ${keybindingsPath} instead; this tool's description says how.`;
 
 const invalid = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
@@ -131,6 +132,7 @@ export const layer = McpToolAccess.toLayer(AppToolkit, {
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
         const keybindings = yield* Keybindings.Keybindings;
+        const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
         const write = Effect.gen(function* () {
           // The turn may have ended, or the thread's modes changed, while this waited for the lock.
           yield* check;
@@ -146,7 +148,7 @@ export const layer = McpToolAccess.toLayer(AppToolkit, {
           }
           const command = yield* required(input.command, "command");
           if (!(STATIC_KEYBINDING_COMMANDS as ReadonlyArray<string>).includes(command)) {
-            return yield* invalid(unknownKeybindingCommandMessage());
+            return yield* invalid(unknownKeybindingCommandMessage(keybindingsConfigPath));
           }
           const rule = yield* decodeUpsertKeybinding({
             key: yield* required(input.key, "key"),

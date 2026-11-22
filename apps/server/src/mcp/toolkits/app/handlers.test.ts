@@ -13,6 +13,7 @@ import * as CheckpointDiffQuery from "../../../checkpointing/CheckpointDiffQuery
 import * as WorktreeSetupTracker from "../../../project/WorktreeSetupTracker.ts";
 import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
+import * as ServerConfig from "../../../config.ts";
 import * as Keybindings from "../../../keybindings.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -190,7 +191,7 @@ it.effect("a keybinding binds only built-in commands with valid shortcut syntax"
         Effect.map((chunks) => chunks.at(-1)?.result),
       );
     expect(JSON.stringify(yield* upsert({ key: "mod+k", command: "bash:rm -rf ~" }))).toContain(
-      "`user.<name>.run` or `bash:<command>`",
+      "`bash:<command>`) goes in /home/user/.t3/dev/keybindings.json",
     );
     expect(JSON.stringify(yield* upsert({ key: "mod+k+j", command: "chat.new" }))).toContain(
       "not valid shortcut syntax",
@@ -207,6 +208,9 @@ it.effect("a keybinding binds only built-in commands with valid shortcut syntax"
             Layer.mock(ThreadManagement.ThreadManagementService)({
               getThreadShell: () => Effect.succeed(liveThreadShell(threadId)),
             }),
+            Layer.mock(ServerConfig.ServerConfig)({
+              keybindingsConfigPath: "/home/user/.t3/dev/keybindings.json",
+            } as ServerConfig.ServerConfig["Service"]),
             Layer.mock(Keybindings.Keybindings)({
               upsertKeybindingRule: (rule) => {
                 written.push(rule);
