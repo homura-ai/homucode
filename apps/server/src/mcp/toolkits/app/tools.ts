@@ -19,6 +19,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as CheckpointDiffQuery from "../../../checkpointing/CheckpointDiffQuery.ts";
+import * as ServerConfig from "../../../config.ts";
 import * as Keybindings from "../../../keybindings.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchService.ts";
@@ -91,7 +92,8 @@ const ThreadDiffTool = Tool.make("t3_thread_diff", {
 const KeybindingTool = Tool.make("t3_keybinding", {
   ...shared,
   description:
-    "Add, change, or remove a T3 Code keyboard shortcut, only when the user asks. upsert: bind `key` (such as `mod+shift+k`) to a T3 `command` id; an unknown id returns the valid ones. Optional `when` clause; `replace` names the rule it replaces. remove: drop the rule `replace` names. Asks the user first below full access.",
+    "Add, change, or remove a T3 Code keyboard shortcut, only when the user asks. upsert: bind `key` (such as `mod+shift+k`) to a built-in `command` id; an unknown id returns the valid ones. Optional `when` clause; `replace` names the rule it replaces. remove: drop the rule `replace` names. Asks the user first below full access. " +
+    'A key can also run a script, which this tool does not bind. When no built-in does what the user wants, write an app script at `scripts/<name>.ts` in this server\'s data folder (`~/.t3/userdata` by default; a refusal names it): `export default async (t3: T3App) => {...}`, where `t3.current()` gives the open project and thread and window APIs such as `navigator.clipboard` work. Then add `{"key": ..., "command": "user.<name>.run"}` to `keybindings.json` there. Or bind `bash:<command>` there, which runs one shell line in a new terminal in the thread\'s checkout. App scripts run in the desktop app or a browser on the same machine, once the user turns on Settings → HomuCode → Interface → App scripts on that device; agents cannot, so tell the user.',
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     action: Schema.Literals(["upsert", "remove"]),
@@ -110,6 +112,7 @@ const KeybindingTool = Tool.make("t3_keybinding", {
   dependencies: [
     ...threadDependencies,
     Keybindings.Keybindings,
+    ServerConfig.ServerConfig,
     ThreadCommandExecutor.ThreadCommandExecutor,
   ],
 }).annotate(Tool.Destructive, true);

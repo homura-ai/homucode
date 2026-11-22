@@ -21,6 +21,7 @@ import {
   PreviewAutomationError,
   PreviewAutomationUnavailableError,
   ProviderInstanceId,
+  STATIC_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -53,6 +54,8 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
+import { unknownKeybindingCommandMessage } from "../../apps/server/src/mcp/toolkits/app/handlers.ts";
+import { AppToolkit } from "../../apps/server/src/mcp/toolkits/app/tools.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -472,6 +475,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   ProjectToolkit,
   EnvironmentToolkit,
   ThemeToolkit,
+  AppToolkit,
   PreviewControlsToolkit,
   WorktreeToolkit,
   PullRequestsToolkit,
@@ -2072,6 +2076,16 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
   if (isT3Name(call.name) && name === "t3_theme_read" && fromWorld) {
     const result = yield* themeRead(testCase.setup.world, input);
     return result.isError ? failed(result.value) : toolResult(call.id, result.value);
+  }
+  // T3 refuses to bind a command that is not built in, before any mocked result.
+  if (
+    isT3Name(call.name) &&
+    name === "t3_keybinding" &&
+    input.action === "upsert" &&
+    typeof input.command === "string" &&
+    !(STATIC_KEYBINDING_COMMANDS as ReadonlyArray<unknown>).includes(input.command)
+  ) {
+    return failed(unknownKeybindingCommandMessage("/home/user/.t3/userdata/keybindings.json"));
   }
   // A pasted secret is saved without a card, so a mocked card outcome does not apply.
   if (mock !== undefined && mock !== "default" && !pastedSecret(name, input)) {
