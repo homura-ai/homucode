@@ -504,7 +504,8 @@ Signature checks, filters, and dedupe can skip a webhook request.
 `bindToCurrentThread` defaults to `true` only when the caller has a thread in
 the task's project, and bound runs post into that thread. Otherwise the first
 run launches a thread in the task's project and later runs continue it.
-Explicit `bindToCurrentThread: false` launches a new thread for every run.
+Explicit `bindToCurrentThread: false` launches a new thread for every run,
+unless `freshSession` is true.
 Explicit `bindToCurrentThread: true` without a caller thread in that project
 is rejected. Pausing uses `schedule_task` with `scheduledTaskId` and `enabled: false`;
 deletion is permanent.
