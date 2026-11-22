@@ -4367,6 +4367,46 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
     );
 
+    it.effect.each([
+      { name: "continues one thread when unbound by default", input: {}, mode: "continue" },
+      {
+        name: "starts a new thread each run when unbound explicitly",
+        input: { bindToCurrentThread: false },
+        mode: "new_thread",
+      },
+      {
+        name: "starts fresh sessions on request",
+        input: { freshSession: true },
+        mode: "fresh_session",
+      },
+    ] as const)("a task created outside a thread $name", ({ input, mode }) =>
+      Effect.gen(function* () {
+        const inputs = yield* Ref.make<ReadonlyArray<ScheduledTaskUpsertInput>>([]);
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.provide(
+            service(
+              masterRepository,
+              yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]),
+              existing,
+              undefined,
+              undefined,
+              inputs,
+            ),
+          ),
+        );
+        yield* mcp.scheduleTask(client, {
+          projectId,
+          prompt: "Check the build",
+          schedule,
+          ...input,
+        });
+        assert.deepEqual(
+          (yield* Ref.get(inputs)).map((saved) => [saved.threadId, saved.threadMode]),
+          [[null, mode]],
+        );
+      }),
+    );
+
     it.effect("keeps one thread when fresh sessions are turned off before the first run", () =>
       Effect.gen(function* () {
         const inputs = yield* Ref.make<ReadonlyArray<ScheduledTaskUpsertInput>>([]);
