@@ -93,5 +93,20 @@ describe("withClientStopScope", () => {
       ...interrupt,
       reason: "Stopped by an unknown sender",
     });
+    const promote = {
+      type: "queued-message.promote-to-steer",
+      commandId,
+      threadId,
+      queuedRunId: runId,
+      targetRunId: runId,
+      reason: "Stopped by an agent",
+    } as const;
+    expect(withClientStopReason({ ...promote, interrupt: true }, { surface: "web" })).toEqual({
+      ...promote,
+      interrupt: true,
+      reason: "Stopped by a human to send a queued message now",
+    });
+    const { reason: _claimed, ...steer } = promote;
+    expect(withClientStopReason(promote, { surface: "web" })).toEqual(steer);
   });
 });

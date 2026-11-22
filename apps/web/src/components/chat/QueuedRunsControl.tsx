@@ -26,6 +26,7 @@ import {
   Clock3Icon,
   MessagesSquareIcon,
   PencilIcon,
+  SendIcon,
   XIcon,
 } from "lucide-react";
 import * as DateTime from "effect/DateTime";
@@ -153,6 +154,11 @@ export function QueuedRunsControl({
     workflow?.canSendNow === true ||
     (workflow?.canPromoteToSteer === true &&
       (!freshContext || workflow.promoteSkipsCompaction === true));
+  // Send now stops the running turn; during compaction Steer now already does that.
+  const canInterruptToSend =
+    activeRun !== null &&
+    workflow?.canSendNow !== true &&
+    workflow?.promoteSkipsCompaction !== true;
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];
@@ -224,6 +230,29 @@ export function QueuedRunsControl({
     steerInFlightRef.current = false;
     setBusyRunId(null);
     if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: m(msg("Could not send queued message")),
+        description:
+          error instanceof Error
+            ? (thrownErrorMessage(error, m) ?? error.message)
+            : m(msg("An error occurred.")),
+      });
+    }
+  };
+
+  const sendQueuedMessageNow = async (queuedRunId: RunId) => {
+    if (activeRun === null || steerInFlightRef.current) return;
+    steerInFlightRef.current = true;
+    setBusyRunId(queuedRunId);
+    const result = await promote({
+      environmentId: props.environmentId,
+      input: { threadId: props.threadId, queuedRunId, targetRunId: activeRun.id, interrupt: true },
+    });
+    steerInFlightRef.current = false;
+    setBusyRunId(null);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
@@ -385,44 +414,68 @@ export function QueuedRunsControl({
                   <span className="text-xs text-muted-foreground">
                     <ModelCooldownCountdown retryAt={item.modelCooldownUntil} />
                   </span>
-                ) : canSendRun(item.freshContext) && !isEditing ? (
+                ) : (canSendRun(item.freshContext) || canInterruptToSend) && !isEditing ? (
                   <>
-                    <Tooltip>
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
-                        <Button
-                          size="xs"
-                          variant="ghost-muted"
-                          disabled={item.runId === null || busyRunId !== null}
-                          onClick={() => {
-                            if (item.runId !== null) {
-                              void sendQueuedMessage(item.runId);
-                            }
-                          }}
-                        >
-                          <ArrowUpIcon />
-                          <T>Steer now</T>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipPopup>
-                        {item.serverIndex === 0 && props.steerShortcutLabel
-                          ? workflow?.canSendNow
-                            ? gt("Start a turn with this message ({shortcut})", {
-                                shortcut: props.steerShortcutLabel,
-                              })
-                            : workflow?.promoteSkipsCompaction
-                              ? gt("Skip compaction and send this message ({shortcut})", {
+                    {canSendRun(item.freshContext) ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="flex shrink-0" />}>
+                          <Button
+                            size="xs"
+                            variant="ghost-muted"
+                            disabled={item.runId === null || busyRunId !== null}
+                            onClick={() => {
+                              if (item.runId !== null) {
+                                void sendQueuedMessage(item.runId);
+                              }
+                            }}
+                          >
+                            <ArrowUpIcon />
+                            <T>Steer now</T>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipPopup>
+                          {item.serverIndex === 0 && props.steerShortcutLabel
+                            ? workflow?.canSendNow
+                              ? gt("Start a turn with this message ({shortcut})", {
                                   shortcut: props.steerShortcutLabel,
                                 })
-                              : gt("Send into the current turn ({shortcut})", {
-                                  shortcut: props.steerShortcutLabel,
-                                })
-                          : workflow?.canSendNow
-                            ? gt("Start a turn with this message")
-                            : workflow?.promoteSkipsCompaction
-                              ? gt("Skip compaction and send this message")
-                              : gt("Send into the current turn")}
-                      </TooltipPopup>
-                    </Tooltip>
+                              : workflow?.promoteSkipsCompaction
+                                ? gt("Skip compaction and send this message ({shortcut})", {
+                                    shortcut: props.steerShortcutLabel,
+                                  })
+                                : gt("Send into the current turn ({shortcut})", {
+                                    shortcut: props.steerShortcutLabel,
+                                  })
+                            : workflow?.canSendNow
+                              ? gt("Start a turn with this message")
+                              : workflow?.promoteSkipsCompaction
+                                ? gt("Skip compaction and send this message")
+                                : gt("Send into the current turn")}
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
+                    {canInterruptToSend ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="flex shrink-0" />}>
+                          <Button
+                            size="xs"
+                            variant="ghost-muted"
+                            disabled={item.runId === null || busyRunId !== null}
+                            onClick={() => {
+                              if (item.runId !== null) {
+                                void sendQueuedMessageNow(item.runId);
+                              }
+                            }}
+                          >
+                            <SendIcon />
+                            <T>Send now</T>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipPopup>
+                          {gt("Stop the current turn and start one with this message")}
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
                   </>
                 ) : null}
                 {item.pending ? (
