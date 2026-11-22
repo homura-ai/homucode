@@ -383,7 +383,7 @@ const appRunCommand = Command.make("run", {
   ),
 }).pipe(
   Command.withDescription(
-    "Run an app script in the T3 Code desktop window. Off unless enabled in Settings → Labs → App scripts.",
+    "Run an app script in the T3 Code desktop window. Off unless enabled in Settings → HomuCode → Interface → App scripts.",
   ),
   Command.withHandler(runAppScriptCommand),
 );

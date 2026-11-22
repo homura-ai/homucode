@@ -102,13 +102,13 @@ export function appScriptRunRefusal(
   input: { readonly source: AppScriptRunSource; readonly fromAgent: boolean },
 ): string | null {
   if (gates?.appScriptsEnabled !== true) {
-    return "App scripts are off. Turn them on in Settings → Labs → App scripts on this device.";
+    return "App scripts are off. Turn them on in Settings → HomuCode → Interface → App scripts on this device.";
   }
   if (input.source === "terminal" && !gates.appScriptsFromTerminal) {
-    return "Running app scripts from a terminal is off. Turn it on in Settings → Labs → App scripts.";
+    return "Running app scripts from a terminal is off. Turn it on in Settings → HomuCode → Interface → App scripts.";
   }
   if (input.fromAgent && !gates.appScriptsFromAgents) {
-    return "Agents may not run app scripts. Allow it in Settings → Labs → App scripts.";
+    return "Agents may not run app scripts. Allow it in Settings → HomuCode → Interface → App scripts.";
   }
   return null;
 }
