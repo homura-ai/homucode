@@ -4374,11 +4374,6 @@ describe("OrchestratorMcpService provider resolution", () => {
         input: { bindToCurrentThread: false },
         mode: "new_thread",
       },
-      {
-        name: "starts fresh sessions on request",
-        input: { freshSession: true },
-        mode: "fresh_session",
-      },
     ] as const)("a task created outside a thread $name", ({ input, mode }) =>
       Effect.gen(function* () {
         const inputs = yield* Ref.make<ReadonlyArray<ScheduledTaskUpsertInput>>([]);

@@ -813,7 +813,7 @@ export const OrchestratorMcpScheduleTaskInput = Schema.Struct({
   bindToCurrentThread: Schema.optional(
     Schema.Boolean.annotate({
       description:
-        "True posts here. False starts a new thread each run. Unset: true in own project; elsewhere runs continue one thread the first run makes. Updates keep it.",
+        "True posts here. False: a new thread each run, unless freshSession. Unset: true in own project; elsewhere runs continue one thread the first run makes. Updates keep it.",
     }),
   ),
   freshSession: Schema.optional(
