@@ -257,7 +257,10 @@ function StripValue(props: { readonly children: ReactNode; readonly color?: stri
     <Text
       numberOfLines={1}
       className="text-2xs text-foreground-muted"
-      style={{ fontVariant: ["tabular-nums"], color: props.color }}
+      style={{
+        fontVariant: ["tabular-nums"],
+        ...(props.color === undefined ? {} : { color: props.color }),
+      }}
     >
       {props.children}
     </Text>
