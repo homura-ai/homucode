@@ -4,13 +4,18 @@ import {
   statusLineEffortPosition,
   statusLineUsageHue,
 } from "@t3tools/client-runtime/status-line";
+import { statusLineUsageColor } from "@t3tools/shared/themeColors";
 
 function oklabMix(from: string, to: string, amount: number): string {
   return `color-mix(in oklab, ${from}, ${to} ${amount * 100}%)`;
 }
 
-export function statusUsedColor(percent: number): string {
+export function statusCacheColor(percent: number): string {
   return `hsl(from var(--success-foreground) ${statusLineUsageHue(percent)} s l)`;
+}
+
+export function statusDialColor(percent: number, role: "ring" | "text"): string {
+  return `light-dark(${statusLineUsageColor(percent, "light", role)}, ${statusLineUsageColor(percent, "dark", role)})`;
 }
 
 export function statusEffortColor(effort: string): string | undefined {

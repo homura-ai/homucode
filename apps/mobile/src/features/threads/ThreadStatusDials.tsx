@@ -16,6 +16,7 @@ import {
   type StatusLineLimit,
   type StatusLineStats,
 } from "@t3tools/client-runtime/status-line";
+import { statusLineUsageColor } from "@t3tools/shared/themeColors";
 import Constants from "expo-constants";
 import { useGT } from "gt-react-native";
 import { useContext, type ReactNode } from "react";
@@ -32,10 +33,9 @@ const RING_RADIUS = 10.5;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const appVersion = Constants.expoConfig?.version ?? null;
 
-function useUsedColor(percent: number) {
-  const { themeAppearance } = useAppearancePreferences();
+function cacheTextColor(percent: number, themeAppearance: "light" | "dark") {
   const tone = themeAppearance === "dark" ? "64.4%, 51.6%" : "93.5%, 24.3%";
-  return `hsl(${statusLineUsageHue(percent).toFixed(4)}, ${tone})`;
+  return `hsl(${statusLineUsageHue(statusLineCacheRisk(percent)).toFixed(4)}, ${tone})`;
 }
 
 function Dial(props: {
@@ -48,10 +48,9 @@ function Dial(props: {
   readonly dimmed?: boolean;
 }) {
   const interLoaded = useContext(StatusLineInterLoaded);
-  const { themeVariables } = useAppearancePreferences();
+  const { themeAppearance, themeVariables } = useAppearancePreferences();
   const percent = statusLineGaugePercent(props.percent);
-  const color = useUsedColor(props.colorPercent);
-  const fillOpacity = 0.3 * (Math.max(0, Math.min(100, props.colorPercent)) / 100) ** 4;
+  const color = statusLineUsageColor(props.colorPercent, themeAppearance, "ring");
   const foreground = themeVariables["--color-foreground"];
   return (
     <View
@@ -65,8 +64,7 @@ function Dial(props: {
           cx={13}
           cy={13}
           r={RING_RADIUS}
-          fill={color}
-          fillOpacity={fillOpacity}
+          fill="none"
           stroke={color}
           strokeOpacity={0.22}
           strokeWidth={3}
@@ -104,7 +102,7 @@ function Dial(props: {
         <SvgText
           x={13}
           y={13}
-          fill={foreground}
+          fill={statusLineUsageColor(props.colorPercent, themeAppearance, "text")}
           fontSize={percent === 100 ? 8 : 9}
           fontFamily={interLoaded ? "Inter-SemiBold" : undefined}
           fontWeight={interLoaded ? "normal" : "600"}
@@ -184,7 +182,8 @@ function LimitDial(props: {
   const note = useLimitNote(props.limit, props.nowMs);
   const remaining = statusLineLimitRemaining(props.limit, props.nowMs);
   const risk = statusLineQuotaColorPercent(props.limit, props.nowMs);
-  const resetColor = useUsedColor(risk);
+  const { themeAppearance } = useAppearancePreferences();
+  const resetColor = statusLineUsageColor(risk, themeAppearance, "text");
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   const remainingLabel = gt("{percent}% remaining", { percent: remainingPercent });
   const projectedLabel =
@@ -282,7 +281,7 @@ export function ThreadStatusDialStrip(props: {
   const weeklyLabel = gt("week", { $context: "weekly usage limit" });
   const compactWeeklyLabel = gt("wk", { $context: "short label for weekly usage" });
   const uptime = statusLineUptime(props.createdAt, nowMs);
-  const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
+  const cacheColor = cacheTextColor(stats.cachePercent ?? 100, themeAppearance);
   const cost =
     stats.cost === null ? null : `${stats.cost.amount}${stats.cost.basis === "api" ? " API" : ""}`;
   const model = mobileStatusLineModelLabels(stats.modelName);
@@ -549,16 +548,21 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = useLimitNote(props.limit, props.nowMs);
-  const resetColor = useUsedColor(statusLineQuotaColorPercent(props.limit, props.nowMs));
+  const { themeAppearance } = useAppearancePreferences();
+  const risk = statusLineQuotaColorPercent(props.limit, props.nowMs);
+  const textColor = statusLineUsageColor(risk, themeAppearance, "text");
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: remainingPercent, color: resetColor }}
+      meter={{
+        percent: remainingPercent,
+        color: statusLineUsageColor(risk, themeAppearance, "ring"),
+      }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
       note={
         note === null ? null : (
-          <Text className="text-xs" style={{ color: resetColor }}>
+          <Text className="text-xs" style={{ color: textColor }}>
             {note}
           </Text>
         )
@@ -576,7 +580,9 @@ function LimitFact(props: {
           : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
       ]}
     >
-      {gt("{percent}% remaining", { percent: remainingPercent })}
+      <Text style={{ color: textColor }}>
+        {gt("{percent}% remaining", { percent: remainingPercent })}
+      </Text>
     </Fact>
   );
 }
@@ -591,8 +597,7 @@ export function ThreadStatusDialDetails(props: {
   const { stats, nowMs } = props;
   const effortStyle = effortTextStyle(stats.effort, themeAppearance);
   const uptime = statusLineUptime(props.createdAt, nowMs);
-  const contextColor = useUsedColor(stats.contextPercent ?? 0);
-  const cacheColor = useUsedColor(statusLineCacheRisk(stats.cachePercent ?? 100));
+  const cacheColor = cacheTextColor(stats.cachePercent ?? 100, themeAppearance);
   return (
     <View className="gap-4">
       <View className="flex-row flex-wrap gap-3">
@@ -601,11 +606,22 @@ export function ThreadStatusDialDetails(props: {
             name={gt("Context", { $context: "model context window" })}
             {...(stats.contextPercent === null
               ? {}
-              : { meter: { percent: stats.contextPercent, color: contextColor } })}
+              : {
+                  meter: {
+                    percent: stats.contextPercent,
+                    color: statusLineUsageColor(stats.contextPercent, themeAppearance, "ring"),
+                  },
+                })}
           >
-            {stats.contextPercent === null
-              ? null
-              : `${statusLineGaugePercent(stats.contextPercent)}% · `}
+            {stats.contextPercent === null ? null : (
+              <Text
+                style={{
+                  color: statusLineUsageColor(stats.contextPercent, themeAppearance, "text"),
+                }}
+              >
+                {`${statusLineGaugePercent(stats.contextPercent)}% · `}
+              </Text>
+            )}
             {formatStatusLineTokens(stats.contextTokens)}
             {stats.contextMaxTokens === null
               ? null

@@ -3,7 +3,7 @@ import type { MFunctionType } from "gt-i18n/types";
 import { pipe } from "effect/Function";
 import type { EnvironmentTheme } from "@t3tools/contracts";
 import "culori/css";
-import { converter, parse } from "culori/fn";
+import { converter, formatHex, interpolate, parse, toGamut } from "culori/fn";
 import {
   T3_CHAT_THEME,
   T3_CODE_LIGHT_THEME_COLORS,
@@ -22,6 +22,57 @@ import {
 } from "./contextChipAccents.ts";
 
 const THEME_COLOR_ROLE_SET: ReadonlySet<string> = new Set(THEME_COLOR_ROLES);
+
+// Radix Colors v3 step 9 for rings and step 11 for text, with light and dark variants.
+const USAGE_GREEN = ["#30a46c", "#218358", "#3dd68c"] as const;
+const USAGE_LIME = ["#bdee63", "#5c7c2f", "#d4ff70"] as const;
+const USAGE_YELLOW = ["#ffc53d", "#ab6400", "#ffca16"] as const;
+const USAGE_ORANGE = ["#f76b15", "#cc4e00", "#ffa057"] as const;
+const USAGE_RED = ["#e5484d", "#ce2c31", "#ff9592"] as const;
+
+const usagePalette = (column: 0 | 1 | 2) => ({
+  lime: interpolate(
+    [
+      [USAGE_GREEN[column], 0],
+      [USAGE_LIME[column], 0.3],
+      [USAGE_YELLOW[column], 0.55],
+      [USAGE_ORANGE[column], 0.78],
+      [USAGE_RED[column], 1],
+    ],
+    "oklch",
+  ),
+  standard: interpolate(
+    [
+      [USAGE_GREEN[column], 0],
+      [USAGE_YELLOW[column], 0.5],
+      [USAGE_ORANGE[column], 0.75],
+      [USAGE_RED[column], 1],
+    ],
+    "oklch",
+  ),
+});
+
+const usageRingPalette = usagePalette(0);
+const usageTextPalettes = { light: usagePalette(1), dark: usagePalette(2) };
+const toSrgb = toGamut("rgb", "oklch");
+
+export function statusLineUsageColor(
+  percent: number,
+  appearance: ThemeAppearance,
+  role: "ring" | "text",
+): string {
+  const position = Math.max(0, Math.min(100, percent)) / 100;
+  const palette = role === "ring" ? usageRingPalette : usageTextPalettes[appearance];
+  if (appearance === "dark" || position <= 0.4) {
+    return formatHex(toSrgb(palette.lime(position)));
+  }
+  const standard = palette.standard(position);
+  const color =
+    position >= 0.5
+      ? standard
+      : interpolate([palette.lime(position), standard], "oklch")((position - 0.4) * 10);
+  return formatHex(toSrgb(color));
+}
 
 export function lenientThemeColorOverrides(
   value: Readonly<Record<string, unknown>>,

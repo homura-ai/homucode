@@ -30,7 +30,7 @@ import type { MessageResolver } from "../../i18n/messages";
 import { APP_VERSION } from "../../branding";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Switch } from "../ui/switch";
-import { statusEffortColor, statusUsedColor } from "./statusLineColors";
+import { statusCacheColor, statusDialColor, statusEffortColor } from "./statusLineColors";
 
 function limitNote(limit: StatusLineLimit, nowMs: number, resolve: MessageResolver): string {
   if (statusLineLimitEnded(limit, nowMs)) return resolve(msg("window ended"));
@@ -49,8 +49,7 @@ function Ring(props: {
         cx="13"
         cy="13"
         r="10.5"
-        fill="currentColor"
-        fillOpacity={0.3 * (Math.max(0, Math.min(100, props.colorPercent)) / 100) ** 4}
+        fill="none"
         stroke="currentColor"
         strokeOpacity="0.22"
         strokeWidth="3"
@@ -86,7 +85,8 @@ function Ring(props: {
         y="13.4"
         textAnchor="middle"
         dominantBaseline="central"
-        className={`fill-foreground font-semibold ${props.percent === 100 ? "text-4xs" : "text-3xs"}`}
+        fill={statusDialColor(props.colorPercent, "text")}
+        className={`font-semibold ${props.percent === 100 ? "text-4xs" : "text-3xs"}`}
       >
         {props.percent}
       </text>
@@ -110,7 +110,7 @@ function Dial(props: {
       role="img"
       aria-label={props.label}
       className={`flex shrink-0 items-center gap-1.5 ${props.dimmed ? "opacity-50" : ""}`}
-      style={{ color: statusUsedColor(props.colorPercent) }}
+      style={{ color: statusDialColor(props.colorPercent, "ring") }}
     >
       <Ring
         percent={percent}
@@ -166,7 +166,7 @@ function LimitDial(props: {
         left === null ? null : (
           <>
             <RotateCwIcon />
-            <span style={{ color: statusUsedColor(risk) }}>{left}</span>
+            <span style={{ color: statusDialColor(risk, "text") }}>{left}</span>
           </>
         )
       }
@@ -330,7 +330,7 @@ export function StatusDialStrip(props: {
             className="@max-[21rem]/dials:hidden"
           >
             <DatabaseIcon />
-            <span style={{ color: statusUsedColor(statusLineCacheRisk(stats.cachePercent)) }}>
+            <span style={{ color: statusCacheColor(statusLineCacheRisk(stats.cachePercent)) }}>
               {Math.round(stats.cachePercent)}%
             </span>
           </Stat>
@@ -422,14 +422,15 @@ function LimitFact(props: {
 }) {
   const gt = useGT();
   const note = limitNote(props.limit, props.nowMs, useMessages());
-  const color = statusUsedColor(statusLineQuotaColorPercent(props.limit, props.nowMs));
+  const risk = statusLineQuotaColorPercent(props.limit, props.nowMs);
+  const textColor = statusDialColor(risk, "text");
   const { remainingPercent, projectedRemainingPercent, depletionRatioPercent } = props.limit;
   return (
     <Fact
       name={props.name}
-      meter={{ percent: remainingPercent, color }}
+      meter={{ percent: remainingPercent, color: statusDialColor(risk, "ring") }}
       dimmed={statusLineLimitEnded(props.limit, props.nowMs)}
-      note={note === "" ? undefined : <span style={{ color }}>{note}</span>}
+      note={note === "" ? undefined : <span style={{ color: textColor }}>{note}</span>}
       details={[
         ...(projectedRemainingPercent === null
           ? []
@@ -443,7 +444,7 @@ function LimitFact(props: {
           : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
       ]}
     >
-      <span className="tabular-nums">
+      <span className="tabular-nums" style={{ color: textColor }}>
         {gt("{percent}% remaining", { percent: remainingPercent })}
       </span>
     </Fact>
@@ -470,13 +471,15 @@ export function StatusDialCard(props: {
               : {
                   meter: {
                     percent: stats.contextPercent,
-                    color: statusUsedColor(stats.contextPercent),
+                    color: statusDialColor(stats.contextPercent, "ring"),
                   },
                 })}
           >
-            {stats.contextPercent === null
-              ? null
-              : `${statusLineGaugePercent(stats.contextPercent)}% · `}
+            {stats.contextPercent === null ? null : (
+              <span style={{ color: statusDialColor(stats.contextPercent, "text") }}>
+                {`${statusLineGaugePercent(stats.contextPercent)}% · `}
+              </span>
+            )}
             {formatStatusLineTokens(stats.contextTokens)}
             {stats.contextMaxTokens === null
               ? null
@@ -503,7 +506,7 @@ export function StatusDialCard(props: {
         {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}
         {stats.cachePercent === null ? null : (
           <Fact name={gt("Cache hits")}>
-            <span style={{ color: statusUsedColor(statusLineCacheRisk(stats.cachePercent)) }}>
+            <span style={{ color: statusCacheColor(statusLineCacheRisk(stats.cachePercent)) }}>
               {Math.round(stats.cachePercent)}%
             </span>
           </Fact>
