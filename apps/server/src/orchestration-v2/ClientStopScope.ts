@@ -47,15 +47,6 @@ export function withClientStopReason(
   command: OrchestrationV2Command,
   sentFrom: OrchestrationMessageSentFrom | undefined,
 ): OrchestrationV2Command {
-  if (command.type === "queued-message.promote-to-steer") {
-    const { reason: _claimed, ...rest } = command;
-    return command.interrupt === true
-      ? {
-          ...rest,
-          reason: stoppedBy(connectionStopActor(sentFrom), "to send a queued message now"),
-        }
-      : rest;
-  }
   if (command.type !== "thread.stop" && command.type !== "run.interrupt") return command;
   return { ...command, reason: stoppedBy(connectionStopActor(sentFrom)) };
 }
