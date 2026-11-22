@@ -334,9 +334,7 @@ shortcut described above.
 On web and desktop, queued messages appear at the end of the thread as dashed messages that have
 not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
 images. **Steer now** sends a queued message into the running turn. When the thread is
-idle, it starts a turn with the queued message. **Send now** stops the running turn and starts the
-next turn with the queued message; on mobile it is in the message's long-press menu. You can also
-edit or remove it.
+idle, it starts a turn with the queued message. You can also edit or remove it.
 
 When Claude reports which messages it reads, **Send now** appears below a waiting steer. Use it to
 interrupt the current work. HomuCode resends any steers Claude drops unread.
