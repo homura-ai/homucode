@@ -715,9 +715,8 @@ describe("buildStatusLineInput", () => {
       projectedRemainingPercent: null,
     });
     expect(buildStatusLineStats(stale).fiveHour).toMatchObject({ remainingPercent: 70 });
-    expect(buildStatusLineInput(stale).rate_limits?.seven_day).toEqual({
-      used_percentage: 93,
-      resets_at: Date.parse(reset) / 1000,
+    expect(buildStatusLineInput(stale).rate_limits).toMatchObject({
+      seven_day: { used_percentage: 93, resets_at: Date.parse(reset) / 1000 },
     });
   });
 

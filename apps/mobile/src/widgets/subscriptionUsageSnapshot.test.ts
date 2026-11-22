@@ -9,6 +9,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   buildSubscriptionUsageSnapshot,
   createWidgetRefresher,
+  subscriptionUsageDeadlines,
+  subscriptionUsageTimeline,
   WIDGET_REFRESH_INTERVAL,
 } from "./subscriptionUsageSnapshot";
 
@@ -278,7 +280,7 @@ describe("subscription widget expiry", () => {
       now + 3 * 60_000,
     );
     expect(snapshot.providers[0]).toMatchObject({
-      expiresAt: Date.parse(weekly.resetsAt),
+      expiresAt: maxAgeDeadline,
       windows: [{ kind: "weekly", remaining: 5 }],
     });
     expect(snapshot.providers[0]?.windows[0]?.accounts).toEqual([
@@ -292,6 +294,54 @@ describe("subscription widget expiry", () => {
         durationMs: weekly.windowDurationMins * 60_000,
       },
     ]);
+  });
+
+  it.each([40, 100])("keeps readings when a published weekly reset passes with %i used", (used) => {
+    const weeklyReset = now + 2 * 60_000;
+    const input = presentations([
+      provider({
+        usageLimits: {
+          checkedAt,
+          windows: [
+            window,
+            {
+              ...window,
+              id: "weekly",
+              kind: "weekly",
+              usedPercent: used,
+              resetsAt: new Date(weeklyReset).toISOString(),
+              windowDurationMins: 7 * 24 * 60,
+            },
+          ],
+        },
+      }),
+    ]);
+    const snapshot = buildSubscriptionUsageSnapshot(input, deepLink, now);
+    const expiry = Date.parse(window.resetsAt);
+    expect(snapshot.providers[0]?.expiresAt).toBe(expiry);
+    expect(subscriptionUsageDeadlines(snapshot, now)).toEqual([weeklyReset, expiry]);
+    expect(subscriptionUsageDeadlines(snapshot, weeklyReset)).toEqual([expiry]);
+    const [, atReset, atExpiry] = subscriptionUsageTimeline(snapshot, now);
+    expect(atReset?.date.getTime()).toBe(weeklyReset);
+    const windows = atReset?.props.providers[0]?.windows;
+    expect(windows?.find(({ kind }) => kind === "session")).toMatchObject({
+      remaining: used === 100 ? 0 : 60,
+      ...(used === 100 && { reset: "Reset time unavailable", accounts: [{ refill: 0 }] }),
+    });
+    expect(windows?.find(({ kind }) => kind === "weekly")).toMatchObject({
+      remaining: 100 - used,
+      reset: "Reset time unavailable",
+      accounts: [{ remaining: 100 - used, refill: 0 }],
+    });
+    expect(windows?.find(({ kind }) => kind === "weekly")?.accounts?.[0]?.resetsAt).toBeUndefined();
+    expect(atExpiry?.props.providers[0]?.windows).toEqual([]);
+
+    const rebuilt = buildSubscriptionUsageSnapshot(input, deepLink, weeklyReset + 60_000);
+    expect(rebuilt.providers[0]?.expiresAt).toBe(expiry);
+    expect(subscriptionUsageDeadlines(rebuilt, weeklyReset + 60_000)).toEqual([expiry]);
+    expect(buildSubscriptionUsageSnapshot(input, deepLink, expiry).providers[0]?.windows).toEqual(
+      [],
+    );
   });
 });
 

@@ -29,6 +29,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { MessageResolver } from "../../i18n/messages";
+import { useNowMinuteMs } from "../../lib/clock";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { refillLabel, ResetCredits, resetLabels } from "./UsageLimitsSection";
@@ -201,7 +202,6 @@ function PoolWindowCard({
       windowId: pool.id,
       windowKind: pool.kind,
       environmentIds,
-      now,
     });
   const summary = (
     <>
@@ -604,13 +604,13 @@ type AccountScreenProps = StaticScreenProps<{
   windowId: string;
   windowKind: LimitPoolWindow["kind"];
   environmentIds: readonly string[] | null;
-  now: number;
 }>;
 
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
+  const { accountKey, windowId, windowKind, environmentIds } = route.params;
+  const now = useNowMinuteMs();
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
   const selected =
@@ -623,13 +623,11 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
     .find((candidate) => candidate.driver === account?.driver)
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
-  const evenPace =
+  const forecast =
     account && window
-      ? paceRemainingPercent(
-          usageWindowForForecast(window, account.driver, account.limits.checkedAt, now),
-          now,
-        )
+      ? usageWindowForForecast(window, account.driver, account.limits.checkedAt, now)
       : null;
+  const evenPace = forecast ? paceRemainingPercent(forecast, now) : null;
   const restoresPercent =
     pool?.resets.find((candidate) => candidate.member.account.key === accountKey)
       ?.restoresPercent ?? 0;
@@ -684,12 +682,12 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   <Var>{remainingPercent(window)}</Var>% left
                 </T>
               </Text>
-              {window.resetsAt ? (
+              {forecast?.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   <T>
                     Resets{" "}
                     <Var>
-                      {new Date(window.resetsAt).toLocaleString(undefined, {
+                      {new Date(forecast.resetsAt).toLocaleString(undefined, {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })}
