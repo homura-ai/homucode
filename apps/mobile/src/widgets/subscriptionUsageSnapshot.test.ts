@@ -54,6 +54,7 @@ describe("subscription widget snapshots", () => {
     const snapshot = buildSubscriptionUsageSnapshot(
       presentations([provider({ displayName: "private@example.com" })]),
       deepLink,
+      now,
     );
     expect(snapshot.checkedAt).toBe(now);
     expect(snapshot.providers[0]).toMatchObject({
@@ -79,7 +80,10 @@ describe("subscription widget snapshots", () => {
           accentColor: "#4c6ef5",
           usageLimits: {
             checkedAt,
-            windows: [{ ...window, usedPercent: 29, windowDurationMins: 300 }],
+            windows: [
+              { ...window, usedPercent: 29, windowDurationMins: 300 },
+              { ...window, id: "seven_day", kind: "weekly", label: "Weekly", usedPercent: 80 },
+            ],
           },
         }),
         claude("relay", {
@@ -97,6 +101,7 @@ describe("subscription widget snapshots", () => {
         }),
       ]),
       deepLink,
+      now,
     );
     const session = snapshot.providers[0]?.windows.find((w) => w.kind === "session");
     expect(session?.accounts).toStrictEqual([
@@ -111,6 +116,10 @@ describe("subscription widget snapshots", () => {
         durationMs: 300 * 60_000,
       },
       { name: "RE2" },
+    ]);
+    expect(snapshot.providers[0]?.windows.filter((w) => w.kind === "weekly")).toMatchObject([
+      { label: "Weekly · smol", remaining: 20, accounts: [{ name: "smol", refill: 80 }] },
+      { label: "Weekly · RE2", remaining: 60, accounts: [{ name: "RE2", refill: 40 }] },
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("example.com");
   });
@@ -142,11 +151,11 @@ describe("subscription widget snapshots", () => {
         },
       ],
     ]);
-    expect(buildSubscriptionUsageSnapshot(input, deepLink).providers[0]?.detail).toBe(
+    expect(buildSubscriptionUsageSnapshot(input, deepLink, now).providers[0]?.detail).toBe(
       "Subscription remaining",
     );
     input.get(EnvironmentId.make("env"))!.serverConfig.providers = [];
-    const snapshot = buildSubscriptionUsageSnapshot(input, deepLink);
+    const snapshot = buildSubscriptionUsageSnapshot(input, deepLink, now);
     expect(snapshot.providers[0]?.name).toBe("Codex");
     expect(JSON.stringify(snapshot)).not.toContain("example.com");
   });
@@ -159,6 +168,7 @@ describe("subscription widget snapshots", () => {
     const snapshot = buildSubscriptionUsageSnapshot(
       presentations([provider({ usageLimits: { checkedAt, windows } })]),
       deepLink,
+      now,
     );
     expect(snapshot.providers[0]?.windows).toHaveLength(6);
     expect(snapshot.providers[0]?.totalWindows).toBe(20);
@@ -179,7 +189,7 @@ describe("subscription widget snapshots", () => {
         ],
       },
     });
-    const snapshot = buildSubscriptionUsageSnapshot(input, deepLink);
+    const snapshot = buildSubscriptionUsageSnapshot(input, deepLink, now);
     expect(snapshot.providers[0]?.detail).toBe("Subscription remaining");
     expect(snapshot.providers[0]?.windows[0]?.remaining).toBe(20);
   });
@@ -191,6 +201,7 @@ describe("subscription widget expiry", () => {
     return buildSubscriptionUsageSnapshot(
       presentations([provider({ usageLimits: { checkedAt, windows: [{ ...window, resetsAt }] } })]),
       deepLink,
+      now,
     ).providers[0];
   }
 
@@ -234,6 +245,7 @@ describe("subscription widget expiry", () => {
           ),
         ),
         deepLink,
+        now,
       );
       expect(snapshot.providers[0]).toMatchObject({
         detail: "2 accounts · pooled",
@@ -242,6 +254,45 @@ describe("subscription widget expiry", () => {
       });
     },
   );
+
+  it("keeps observed weekly usage when a reset passes before publication", () => {
+    const weekly = { ...window, kind: "weekly" as const, windowDurationMins: 7 * 24 * 60 };
+    const snapshot = buildSubscriptionUsageSnapshot(
+      presentations([
+        provider({
+          displayName: "Plus",
+          auth: { status: "authenticated", label: "ChatGPT Plus Subscription" },
+          usageLimits: { checkedAt, windows: [weekly] },
+        }),
+        provider({
+          instanceId: ProviderInstanceId.make("pro"),
+          displayName: "Pro",
+          auth: { status: "authenticated", label: "ChatGPT Pro 200 Subscription" },
+          usageLimits: {
+            checkedAt,
+            windows: [{ ...weekly, resetsAt: "2026-09-05T12:02:00.000Z", usedPercent: 100 }],
+          },
+        }),
+      ]),
+      deepLink,
+      now + 3 * 60_000,
+    );
+    expect(snapshot.providers[0]).toMatchObject({
+      expiresAt: Date.parse(weekly.resetsAt),
+      windows: [{ kind: "weekly", remaining: 5 }],
+    });
+    expect(snapshot.providers[0]?.windows[0]?.accounts).toEqual([
+      { name: "Pro", remaining: 0, refill: 0 },
+      {
+        name: "Plus",
+        remaining: 60,
+        refill: 40,
+        resetsAt: Date.parse(weekly.resetsAt),
+        reset: expect.any(String),
+        durationMs: weekly.windowDurationMins * 60_000,
+      },
+    ]);
+  });
 });
 
 describe("widget refresh probes", () => {

@@ -395,6 +395,7 @@ describe("buildStatusLineInput", () => {
       accounts: [30, 70].map((usedPercent, index) => ({
         id: String(index),
         driver: provider.driver,
+        plan: index === 0 ? "Claude Pro Subscription" : "Claude Ultra Subscription",
         usageLimits: {
           checkedAt: provider.checkedAt,
           windows: [
@@ -407,7 +408,12 @@ describe("buildStatusLineInput", () => {
               windowDurationMins: 180,
               burnRatePercentPerSecond: (10 + index * 10) / 3_600,
             },
-            { id: "seven_day", kind: "weekly" as const, label: "Weekly", usedPercent: 60 },
+            {
+              id: "seven_day",
+              kind: "weekly" as const,
+              label: "Weekly",
+              usedPercent: index === 0 ? 20 : 75,
+            },
           ],
         },
       })),
@@ -436,7 +442,7 @@ describe("buildStatusLineInput", () => {
         id: "seven_day",
         label: "Weekly",
         scope: [],
-        remainingPercent: 40,
+        remainingPercent: 30,
         projectedRemainingPercent: null,
         resetsAtMs: null,
       },
@@ -455,12 +461,41 @@ describe("buildStatusLineInput", () => {
         projectedRemainingPercent: 35,
         resetsAtMs: Date.parse(reset),
       },
-      weekly: { remainingPercent: 40, resetsAtMs: null },
+      weekly: { remainingPercent: 30, resetsAtMs: null },
     });
     expect(buildStatusLineInput(routed).rate_limits).toEqual({
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
-      seven_day: { used_percentage: 60 },
+      seven_day: { used_percentage: 70 },
     });
+    const incompleteTiers = {
+      ...routed,
+      usageLimitSources: [
+        {
+          ...hub,
+          accounts: hub.accounts.map((account, index) => ({
+            ...account,
+            email: index === 0 ? "alice@example.com" : "bob@example.com",
+            plan: index === 0 ? account.plan : "Claude Subscription",
+            usageLimits: {
+              ...account.usageLimits,
+              windows: account.usageLimits.windows.map((window) =>
+                window.kind === "weekly" ? { ...window, usedPercent: 25 + index * 50 } : window,
+              ),
+            },
+          })),
+        },
+      ],
+    };
+    expect(buildStatusLineStats(incompleteTiers).weekly).toBeNull();
+    expect(buildStatusLineInput(incompleteTiers).rate_limits).toEqual({
+      five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
+    });
+    expect(buildStatusLineModelUsage(incompleteTiers)[0]?.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Weekly · AE", remainingPercent: 75 }),
+        expect.objectContaining({ label: "Weekly · BE", remainingPercent: 25 }),
+      ]),
+    );
     const nearlySpent = buildStatusLineStats({
       ...routed,
       showSessionDepletionRatio: true,
@@ -560,7 +595,129 @@ describe("buildStatusLineInput", () => {
       }),
     ).toMatchObject({
       fiveHour: { remainingPercent: 53, resetsAtMs: Date.parse(reset) },
-      weekly: { remainingPercent: 40, resetsAtMs: null },
+      weekly: { remainingPercent: 30, resetsAtMs: null },
+    });
+  });
+
+  it("identifies generic hub plans from native logins without mixing quota routes or workspaces", () => {
+    const { usageLimits: _usageLimits, ...provider } = source.providers[0]!;
+    const providerRoute = "http://127.0.0.1:8318/team-a";
+    const reset = "2026-11-20T00:00:00.000Z";
+    const native = (id: string, label: string, type: string, workspaceId: string) => ({
+      ...provider,
+      instanceId: ProviderInstanceId.make(id),
+      auth: { ...provider.auth, email: `${id}@example.com`, label, type, workspaceId },
+    });
+    const pro = native("pro", "Claude Pro Subscription", "pro", "workspace-pro");
+    const proxied = {
+      ...provider,
+      checkedAt: "2026-11-16T00:01:00.000Z",
+      auth: {
+        ...pro.auth,
+        type: "customEndpoint",
+        label: "Custom API endpoint",
+        endpoint: providerRoute,
+      },
+    };
+    const ultra = {
+      ...native("ultra", "Claude Ultra Subscription", "max20", "workspace-ultra"),
+      usageLimits: {
+        checkedAt: provider.checkedAt,
+        windows: [],
+        unavailable: { reason: "probeFailed" as const },
+      },
+    };
+    const accounts = [pro, ultra].map((login, index) => ({
+      id: login.instanceId,
+      driver: login.driver,
+      email: login.auth.email,
+      plan: "Claude Subscription",
+      usageLimits: {
+        checkedAt: provider.checkedAt,
+        windows: [
+          {
+            id: "seven_day",
+            kind: "weekly" as const,
+            label: "Weekly",
+            usedPercent: index === 0 ? 20 : 80,
+            resetsAt: reset,
+            burnRatePercentPerSecond: 0.001,
+          },
+          {
+            id: "five_hour",
+            kind: "session" as const,
+            label: "Session",
+            usedPercent: index === 0 ? 10 : 50,
+            resetsAt: reset,
+          },
+        ],
+      },
+    }));
+    const hub = {
+      id: UsageLimitSourceId.make("quota-hub"),
+      kind: "cliproxy" as const,
+      label: "Accounts",
+      checkedAt: provider.checkedAt,
+      providerRoute,
+      endpoint: "http://127.0.0.1:8838",
+      accounts,
+    };
+    const routed = { ...source, providers: [proxied, pro, ultra], usageLimitSources: [hub] };
+    expect(buildStatusLineStats(routed).weekly).toMatchObject({ remainingPercent: 25 });
+    expect(
+      buildStatusLineStats({
+        ...routed,
+        usageLimitSources: [{ ...hub, providerRoute: providerRoute + "/other" }],
+      }).weekly,
+    ).toBeNull();
+
+    const ambiguous = {
+      ...routed,
+      providers: [
+        ...routed.providers,
+        {
+          ...ultra,
+          instanceId: ProviderInstanceId.make("other-workspace"),
+          auth: { ...ultra.auth, workspaceId: "other-workspace" },
+        },
+      ],
+    };
+    expect(buildStatusLineStats(ambiguous).weekly).toBeNull();
+    expect(buildStatusLineModelUsage(ambiguous)[0]?.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Weekly · PE", remainingPercent: 80 }),
+        expect.objectContaining({ label: "Weekly · UE", remainingPercent: 20 }),
+      ]),
+    );
+
+    const [proAccount, ultraAccount] = accounts;
+    const staleUltra = {
+      ...ultraAccount!,
+      usageLimits: {
+        ...ultraAccount!.usageLimits,
+        windows: [
+          {
+            ...ultraAccount!.usageLimits.windows[0]!,
+            resetsAt: provider.checkedAt,
+            usedPercent: 100,
+          },
+          ultraAccount!.usageLimits.windows[1]!,
+        ],
+      },
+    };
+    const stale = {
+      ...routed,
+      usageLimitSources: [{ ...hub, accounts: [proAccount!, staleUltra] }],
+    };
+    expect(buildStatusLineStats(stale).weekly).toMatchObject({
+      remainingPercent: 7,
+      resetsAtMs: Date.parse(reset),
+      projectedRemainingPercent: null,
+    });
+    expect(buildStatusLineStats(stale).fiveHour).toMatchObject({ remainingPercent: 70 });
+    expect(buildStatusLineInput(stale).rate_limits?.seven_day).toEqual({
+      used_percentage: 93,
+      resets_at: Date.parse(reset) / 1000,
     });
   });
 

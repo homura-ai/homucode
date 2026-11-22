@@ -298,6 +298,7 @@ describe("pools", () => {
       provider({
         driver: claude,
         auth: { status: "authenticated", email: "same@example.com", label },
+        checkedAt,
         usageLimits: { checkedAt, windows: [{ ...window, usedPercent }] },
       });
     const stale = snapshot("Claude Team Subscription", checkedAt, 40);
@@ -331,6 +332,46 @@ describe("pools", () => {
         expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(usedPercent);
       }
     }
+  });
+
+  it("weights generic hub reports by the identified native plans even without native quotas", () => {
+    const logins = [
+      { id: "pro", plan: "Claude Pro Subscription", type: "claude_pro_subscription", used: 20 },
+      { id: "ultra", plan: "Claude Ultra Subscription", type: "max20", used: 80 },
+    ];
+    const native = logins.map(({ id, plan, type }, index) =>
+      provider({
+        driver: claude,
+        instanceId: ProviderInstanceId.make(id),
+        auth: { status: "authenticated", email: `${id}@example.com`, label: plan, type },
+        ...(index === 1 && {
+          usageLimits: { checkedAt, windows: [], unavailable: { reason: "probeFailed" } },
+        }),
+      }),
+    );
+    const hub = {
+      ...source,
+      accounts: logins.map(({ id, used }) => ({
+        id,
+        driver: claude,
+        email: `${id.toUpperCase()}@example.com`,
+        plan: "Claude Subscription",
+        usageLimits: { checkedAt, windows: [{ ...weekly, usedPercent: used }] },
+      })),
+    };
+    const accounts = collectLimitAccounts(
+      new Map([
+        [EnvironmentId.make("native"), { ...laptop, serverConfig: { providers: native } }],
+        [
+          EnvironmentId.make("hub"),
+          { ...laptop, serverConfig: { providers: [], usageLimitSources: [hub] } },
+        ],
+      ]),
+    );
+    expect(accounts.map(({ plan, planType }) => [plan, planType])).toEqual(
+      logins.map(({ plan, type }) => [plan, type]),
+    );
+    expect(collectLimitPools(accounts, now)[0]?.windows[0]?.remainingPercent).toBe(25);
   });
 
   it("merges OpenCode Go limits from machines with the same API key", () => {
@@ -972,7 +1013,7 @@ describe("pools", () => {
     ).toEqual(["weekly", "weekly:secondary"]);
   });
 
-  it("weights pooled Codex quota and resets by each account's plan capacity", () => {
+  it("weights weekly Codex usage, burn and refills by monthly plan price", () => {
     const [pool] = collectLimitPools(
       collectLimitAccounts(
         new Map([
@@ -986,16 +1027,23 @@ describe("pools", () => {
                   {
                     ...source,
                     accounts: [
-                      ["pro", "ChatGPT Pro 200 Subscription", 100],
-                      ["plus", "ChatGPT Plus Subscription", 0],
-                    ].map(([id, plan, usedPercent]) => ({
+                      ["pro", "ChatGPT Pro 200 Subscription", 80, 11],
+                      ["plus", "ChatGPT Plus Subscription", 20, 22],
+                    ].map(([id, plan, usedPercent, burn]) => ({
                       id: String(id),
                       email: `${id}@example.com`,
                       driver: ProviderDriverKind.make("codex"),
                       plan: String(plan),
                       usageLimits: {
                         checkedAt,
-                        windows: [{ ...weekly, id: "secondary", usedPercent: Number(usedPercent) }],
+                        windows: [
+                          {
+                            ...weekly,
+                            id: "secondary",
+                            usedPercent: Number(usedPercent),
+                            burnRatePercentPerSecond: Number(burn) / 3600,
+                          },
+                        ],
                       },
                     })),
                   },
@@ -1008,14 +1056,18 @@ describe("pools", () => {
       now,
     );
     const [pooledWeekly] = pool?.windows ?? [];
-    // Pro 20x holds 20 of the pool's 21 capacity parts.
-    expect(pooledWeekly?.remainingPercent).toBe(5);
+    expect(pooledWeekly?.usedPercent).toBeCloseTo((80 * 200 + 20 * 20) / 220);
+    expect(pooledWeekly?.remainingPercent).toBe(25);
+    expect(pooledWeekly?.burnRatePercentPerSecond).toBeCloseTo(12 / 3600, 12);
     expect(
       pooledWeekly?.resets.map(({ member, restoresPercent }) => [
         member.account.email,
         restoresPercent,
       ]),
-    ).toContainEqual(["pro@example.com", 95]);
+    ).toEqual([
+      ["plus@example.com", 2],
+      ["pro@example.com", 73],
+    ]);
   });
 
   it("pools windows by id across accounts and orders resets by when they land", () => {
@@ -1270,7 +1322,7 @@ describe("pooled account columns", () => {
     ];
     const snapshot = structuredClone(accounts);
     const [claude, cursor] = collectLimitPools(accounts, now);
-    expect.soft(claude?.windows.map((row) => row.remainingPercent)).toEqual([40, 1, 70]);
+    expect.soft(claude?.windows.map((row) => row.remainingPercent)).toEqual([40, null, null]);
     expect.soft(cursor?.windows.map((row) => row.remainingPercent)).toEqual([60, 0, 80]);
     expect(accounts).toEqual(snapshot);
   });
@@ -1293,7 +1345,12 @@ describe("pooled account columns", () => {
       ["b", "a"],
     ]);
     expect(pool!.windows[1]!.resets.map((reset) => reset.member.account.key)).toEqual(["a", "b"]);
-    expect(pool!.windows[1]!.remainingPercent).toBe(50);
+    expect(pool!.windows[1]).toMatchObject({
+      remainingPercent: null,
+      pace: null,
+      resets: [{ restoresPercent: null }, { restoresPercent: null }],
+    });
+    expect(pool!.windows[1]!.members.map(({ window }) => window.usedPercent)).toEqual([20, 80]);
     expect(keys(collectLimitPools(accounts.toReversed(), now)[0]!)).toEqual(keys(pool!));
   });
 
@@ -1352,7 +1409,7 @@ describe("pooled account columns", () => {
           { ...weekly, usedPercent: 80 },
         ]),
         account("c", [weekly]),
-      ],
+      ].map((entry) => ({ ...entry, plan: "Claude Pro Subscription" })),
       now,
     );
     expect(keys(pool!)).toEqual([
@@ -1364,6 +1421,41 @@ describe("pooled account columns", () => {
     expect(pool!.windows[1]!.resets.map((reset) => reset.restoresPercent)).toEqual([40, 20]);
   });
 
+  it.each([
+    ["claudeAgent", "Claude Pro Subscription", "Claude Max Subscription", "max5", 30],
+    ["claudeAgent", "Claude Pro Subscription", "Claude Max Subscription", "Claude Max", null],
+    ["claudeAgent", "Claude Pro Subscription", "Claude Subscription", undefined, null],
+    ["codex", "ChatGPT Pro 100 Subscription", "ChatGPT Edu Subscription", undefined, null],
+    ["codex", "ChatGPT Pro 100 Subscription", "ChatGPT Enterprise Subscription", undefined, null],
+    ["codex", "ChatGPT Pro 100 Subscription", undefined, undefined, null],
+    ["antigravity", "Google AI Pro", "Google AI Ultra", undefined, 50],
+  ] as const)(
+    "uses only identified weekly prices for %s (%s, %s, %s)",
+    (driver, first, plan, planType, remaining) => {
+      const firstAccount = account("a", [
+        { ...weekly, usedPercent: 20, burnRatePercentPerSecond: 0.02 },
+      ]);
+      const otherAccount = account("b", [
+        { ...weekly, usedPercent: 80, burnRatePercentPerSecond: 0.01 },
+      ]);
+      const [pool] = collectLimitPools(
+        [
+          { ...firstAccount, driver: ProviderDriverKind.make(driver), plan: first },
+          { ...otherAccount, driver: ProviderDriverKind.make(driver), plan, planType },
+        ],
+        now,
+      );
+      const [row] = pool!.windows;
+      expect(row?.remainingPercent).toBe(remaining);
+      if (remaining === null) {
+        expect(row?.usedPercent).toBeNull();
+        expect(row?.resets.map((reset) => reset.restoresPercent)).toEqual([null, null]);
+        expect(row?.burnRatePercentPerSecond).toBeUndefined();
+      }
+      expect(row?.members[1]?.window.burnRatePercentPerSecond).toBe(0.01);
+    },
+  );
+
   it("falls back to weekly resets when no account reports a session", () => {
     const [pool] = collectLimitPools(
       [
@@ -1373,6 +1465,42 @@ describe("pooled account columns", () => {
       now,
     );
     expect(keys(pool!)).toEqual([["b", "a"]]);
+  });
+
+  it.each([
+    ["codex", "ChatGPT Pro 200 Subscription", "ChatGPT Plus Subscription"],
+    ["claudeAgent", "Claude Ultra Subscription", "Claude Pro Subscription"],
+  ] as const)("forecasts only future weekly resets for %s", (driver, expensive, cheap) => {
+    const reset = "2026-09-03T11:30:00.000Z";
+    const spent = { ...weekly, resetsAt: reset, usedPercent: 100, burnRatePercentPerSecond: 0.02 };
+    const active = {
+      ...weekly,
+      resetsAt: "2026-09-06T12:00:00.000Z",
+      usedPercent: 70,
+      burnRatePercentPerSecond: 0.01,
+    };
+    const accounts = [
+      { ...account("expensive", [spent]), plan: expensive },
+      { ...account("cheap", [active]), plan: cheap },
+    ].map((entry) => ({ ...entry, driver: ProviderDriverKind.make(driver) }));
+    const [row] = collectLimitPools(accounts, now)[0]!.windows;
+    expect(row?.remainingPercent).toBe(3);
+    expect(row?.pace).toBe("ahead");
+    expect(row?.burnRatePercentPerSecond).toBeUndefined();
+    expect(row?.resets.map(({ at, restoresPercent }) => [at, restoresPercent])).toEqual([
+      [Date.parse(active.resetsAt), 6],
+    ]);
+    expect(row?.members.find(({ account }) => account.key === "expensive")?.window).toEqual(spent);
+
+    const futureObservation = {
+      ...accounts[0]!,
+      limits: { checkedAt: reset, windows: [spent] },
+    };
+    expect(collectLimitPools([futureObservation], now - 60 * 60_000)[0]?.windows[0]).toMatchObject({
+      remainingPercent: 0,
+      pace: null,
+      resets: [],
+    });
   });
 });
 

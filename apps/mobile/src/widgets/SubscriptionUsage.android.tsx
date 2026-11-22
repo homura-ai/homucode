@@ -137,7 +137,14 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
     account.resetsAt && account.durationMs
       ? Math.max(0, Math.min(1, (account.resetsAt - now) / account.durationMs))
       : null;
-  const paceArrow = (accounts: WidgetLimitAccount[]) => {
+  const paceArrow = (window: Extract<Line, { type: "window" }>["window"]) => {
+    const accounts = window.accounts ?? [];
+    if (
+      window.kind === "weekly" &&
+      accounts.filter((account) => account.remaining !== undefined).length > 1
+    ) {
+      return "";
+    }
     const timed = accounts.flatMap((account) => {
       const left = timeLeft(account);
       return left === null || account.remaining === undefined
@@ -315,7 +322,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
               style={{ fontSize: 10 }}
               modifiers={[padding(3, 0, 0, 3)]}
             >
-              {`${text.left}${paceArrow(line.window.accounts ?? [])}`}
+              {`${text.left}${paceArrow(line.window)}`}
             </Text>
           </Row>
         </Column>

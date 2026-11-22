@@ -13,12 +13,18 @@ import {
 import {
   collectLimitPools,
   collectProviderUsageLimits,
+  isSubscriptionWeeklyWindow,
   remainingPercent,
+  resolveLimitAccountMetadata,
   usageLimitSourceAtEndpoint,
+  usageWindowForForecast,
 } from "@t3tools/shared/usageLimits";
 
 import type { ContextWindowSnapshot } from "./state/contextWindow.ts";
-import { resolveProviderInstanceDisplayName } from "./state/providerInstanceDisplay.ts";
+import {
+  providerInstanceInitials,
+  resolveProviderInstanceDisplayName,
+} from "./state/providerInstanceDisplay.ts";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 export interface StatusLineInputSource {
@@ -43,6 +49,7 @@ export type StatusLineUsageSource = Pick<
 
 type StatusLineUsageWindow = ServerProviderUsageWindow & {
   readonly remainingPercent?: number;
+  readonly account?: { readonly key: string; readonly label: string };
 };
 
 function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWindow): boolean {
@@ -57,8 +64,7 @@ function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWind
 
 function hubUsageWindows(
   provider: ServerProvider,
-  sources: UsageLimitSourceSnapshots,
-  now: number,
+  { providers, usageLimitSources: sources, nowMs: now }: StatusLineUsageSource,
   includeAll: boolean,
 ): ReadonlyArray<StatusLineUsageWindow> {
   if (!provider.auth.endpoint) return [];
@@ -66,51 +72,69 @@ function hubUsageWindows(
     useProviderRoute: provider.driver === "claudeAgent",
   });
   if (!hub || hub.error) return [];
-  const accounts = hub.accounts.flatMap((account) =>
-    account.driver !== provider.driver || account.usageLimits.unavailable
-      ? []
-      : [
-          {
-            key: account.id,
-            driver: account.driver,
-            displayName: null,
-            email: account.email,
-            plan: account.plan,
-            accentColor: undefined,
-            environments: [],
-            sourceLabel: hub.label,
-            redeem: null,
-            limits: {
-              ...account.usageLimits,
-              windows: account.usageLimits.windows.filter(
-                (window) =>
-                  (window.resetsAt === undefined || Date.parse(window.resetsAt) > now) &&
-                  (includeAll || summaryWindow(provider, window)),
-              ),
-            },
-          },
-        ],
-  );
-  const [pool] = collectLimitPools(accounts, now);
+  const { resolveKey, plans } = resolveLimitAccountMetadata(providers, sources, hub);
+  const accounts = hub.accounts
+    .filter((account) => account.driver === provider.driver && !account.usageLimits.unavailable)
+    .map((account) => {
+      const key = resolveKey(account);
+      const plan = key === null ? undefined : plans.get(key);
+      return {
+        key: account.id,
+        driver: account.driver,
+        displayName: null,
+        email: account.email,
+        plan: plan?.plan ?? account.plan,
+        planType: plan?.planType,
+        accentColor: undefined,
+        environments: [],
+        sourceLabel: hub.label,
+        redeem: null,
+        limits: {
+          ...account.usageLimits,
+          windows: account.usageLimits.windows.filter(
+            (window) =>
+              (isSubscriptionWeeklyWindow(account.driver, window.kind) ||
+                window.resetsAt === undefined ||
+                Date.parse(window.resetsAt) > now) &&
+              (includeAll || summaryWindow(provider, window)),
+          ),
+        },
+      };
+    });
+  const [pool] = collectLimitPools(accounts, now, { ignoreExpiredWeeklyForSessions: true });
   return (
-    pool?.windows.map((window) => {
+    pool?.windows.flatMap((window): StatusLineUsageWindow[] => {
+      if (window.usedPercent === null || window.remainingPercent === null) {
+        const seen = new Map<string, number>();
+        return window.members.map(({ account, window: reported }, index) => {
+          const name = providerInstanceInitials(account.email ?? account.key) || String(index + 1);
+          const count = (seen.get(name) ?? 0) + 1;
+          seen.set(name, count);
+          return {
+            ...usageWindowForForecast(reported, account.driver, account.limits.checkedAt, now),
+            account: { key: account.key, label: count === 1 ? name : `${name}${count}` },
+          };
+        });
+      }
       const resetsAt = window.resets[0]?.member.window.resetsAt;
       const reported = window.members[0]?.window;
-      return {
-        id: reported?.id ?? window.id,
-        label: window.label,
-        ...(reported?.modelIds === undefined ? {} : { modelIds: reported.modelIds }),
-        ...(reported?.providerIds === undefined ? {} : { providerIds: reported.providerIds }),
-        kind: window.kind,
-        usedPercent: window.usedPercent,
-        remainingPercent: window.remainingPercent,
-        ...(resetsAt === undefined ? {} : { resetsAt }),
-        ...(window.burnRatePercentPerSecond === undefined
-          ? {}
-          : {
-              burnRatePercentPerSecond: window.burnRatePercentPerSecond,
-            }),
-      };
+      return [
+        {
+          id: reported?.id ?? window.id,
+          label: window.label,
+          ...(reported?.modelIds === undefined ? {} : { modelIds: reported.modelIds }),
+          ...(reported?.providerIds === undefined ? {} : { providerIds: reported.providerIds }),
+          kind: window.kind,
+          usedPercent: window.usedPercent,
+          remainingPercent: window.remainingPercent,
+          ...(resetsAt === undefined ? {} : { resetsAt }),
+          ...(window.burnRatePercentPerSecond === undefined
+            ? {}
+            : {
+                burnRatePercentPerSecond: window.burnRatePercentPerSecond,
+              }),
+        },
+      ];
     }) ?? []
   );
 }
@@ -119,7 +143,7 @@ function usageWindows(source: StatusLineInputSource): ReadonlyArray<StatusLineUs
   const instanceId = source.modelSelection?.instanceId;
   const provider = source.providers.find((candidate) => candidate.instanceId === instanceId);
   if (instanceId === undefined || !provider) return [];
-  return providerUsageWindows(provider, source, false);
+  return providerUsageWindows(provider, source, false).filter((window) => !window.account);
 }
 
 function providerUsageWindows(
@@ -128,7 +152,7 @@ function providerUsageWindows(
   includeAll: boolean,
 ): ReadonlyArray<StatusLineUsageWindow> {
   const { instanceId } = provider;
-  const hubWindows = hubUsageWindows(provider, source.usageLimitSources, source.nowMs, includeAll);
+  const hubWindows = hubUsageWindows(provider, source, includeAll);
   const report = collectProviderUsageLimits(
     instanceId,
     source.providers,
@@ -142,17 +166,26 @@ function providerUsageWindows(
   const nativeWindows = limits?.unavailable === undefined ? (limits?.windows ?? []) : [];
   return [
     ...hubWindows,
-    ...nativeWindows.filter(
-      (window) =>
-        // Claude's scoped weekly windows, such as `seven_day_fable`, never stand in for its main one.
-        (includeAll || provider.driver !== "claudeAgent" || summaryWindow(provider, window)) &&
-        !hubWindows.some(
-          (hub) =>
-            hub.kind === window.kind &&
-            (hub.id === window.id ||
-              (summaryWindow(provider, hub) && summaryWindow(provider, window))),
+    ...nativeWindows
+      .filter(
+        (window) =>
+          // Claude's scoped weekly windows, such as `seven_day_fable`, never stand in for its main one.
+          (includeAll || provider.driver !== "claudeAgent" || summaryWindow(provider, window)) &&
+          !hubWindows.some(
+            (hub) =>
+              hub.kind === window.kind &&
+              (hub.id === window.id ||
+                (summaryWindow(provider, hub) && summaryWindow(provider, window))),
+          ),
+      )
+      .map((window) =>
+        usageWindowForForecast(
+          window,
+          provider.driver,
+          limits?.checkedAt ?? provider.checkedAt,
+          source.nowMs,
         ),
-    ),
+      ),
   ];
 }
 
@@ -167,8 +200,8 @@ export function buildStatusLineModelUsage(source: StatusLineUsageSource) {
         models: [...names.values()],
         limits: providerUsageWindows(provider, source, true).map((window) => {
           return {
-            id: window.id,
-            label: window.label,
+            id: window.account ? JSON.stringify([window.id, window.account.key]) : window.id,
+            label: window.account ? `${window.label} · ${window.account.label}` : window.label,
             scope: [
               ...(window.modelIds?.map((id) => names.get(id) ?? id) ?? []),
               ...(window.providerIds ?? []),

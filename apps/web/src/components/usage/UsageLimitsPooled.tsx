@@ -10,6 +10,7 @@ import {
   paceRemainingPercent,
   remainingPercent,
   type ResetCreditChoice,
+  usageWindowForForecast,
 } from "@t3tools/shared/usageLimits";
 import { T, useGT, useMessages } from "gt-react";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
@@ -151,8 +152,10 @@ function SegmentPopover({
   const gt = useGT();
   const m = useMessages();
   const remaining = remainingPercent(window);
-  const timeLeft = paceRemainingPercent(window, now);
-  const resetsIn = formatResetsIn(window, now, m, "in");
+  const forecast = usageWindowForForecast(window, account.driver, account.limits.checkedAt, now);
+  const timeLeft = paceRemainingPercent(forecast, now);
+  const resetsIn = formatResetsIn(forecast, now, m, "in");
+  const restoresPercent = forecast.resetsAt ? (reset?.restoresPercent ?? 0) : 0;
   const where =
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
@@ -207,9 +210,9 @@ function SegmentPopover({
         {timeLeft !== null ? (
           <Row label={gt("Even pace")}>{gt("{timeLeft}% left by now", { timeLeft })}</Row>
         ) : null}
-        {reset && reset.restoresPercent > 0 ? (
+        {restoresPercent > 0 ? (
           <Row label={gt("Restores", { $context: "a reset credit restores part of the pool" })}>
-            {gt("+{percent}% of pool", { percent: reset.restoresPercent })}
+            {gt("+{percent}% of pool", { percent: restoresPercent })}
           </Row>
         ) : null}
       </div>
@@ -367,11 +370,12 @@ function SegmentTriggers({
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem };
   const remaining = remainingPercent(window);
-  const timeLeft = paceRemainingPercent(window, now);
+  const forecast = usageWindowForForecast(window, account.driver, account.limits.checkedAt, now);
+  const timeLeft = paceRemainingPercent(forecast, now);
   const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const m = useMessages();
-  const resetsIn = formatResetsIn(window, now, m);
-  const refillIn = formatResetsIn(window, now, m, "refill");
+  const resetsIn = formatResetsIn(forecast, now, m);
+  const refillIn = formatResetsIn(forecast, now, m, "refill");
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   const gt = useGT();
   const segmentLabel = [
@@ -493,7 +497,8 @@ function LegendRow({
   const { account, window } = payload;
   const remaining = remainingPercent(window);
   const m = useMessages();
-  const resetsIn = formatResetsIn(window, now, m, "refill");
+  const forecast = usageWindowForForecast(window, account.driver, account.limits.checkedAt, now);
+  const resetsIn = formatResetsIn(forecast, now, m, "refill");
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   const gt = useGT();
   return (
@@ -602,24 +607,26 @@ function PoolWindowCard({
   readonly label?: string | null | undefined;
   readonly description?: string | undefined;
 }) {
-  const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const nextRefill = pool.resets.find((reset) => (reset.restoresPercent ?? 0) > 0);
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-1">
         {label !== null ? (
           <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
         ) : null}
-        <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
-            {pool.remainingPercent}%
-          </span>
-          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              <T context="remaining usage percentage">left</T>
+        {pool.remainingPercent !== null ? (
+          <span className="flex items-baseline gap-2">
+            <span className="text-3xl font-semibold text-foreground tabular-nums">
+              {pool.remainingPercent}%
             </span>
-            {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <span>
+                <T context="remaining usage percentage">left</T>
+              </span>
+              {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+            </span>
           </span>
-        </span>
+        ) : null}
         {nextRefill && pool.columns.length > 1 ? (
           <span className="text-xs font-medium text-foreground tabular-nums">
             ↻ +{nextRefill.restoresPercent}%

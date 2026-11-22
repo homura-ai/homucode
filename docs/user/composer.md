@@ -172,7 +172,11 @@ in Settings. Longer durations make the colors less sensitive to recent usage. Th
 defaults are 30 minutes and one day.
 
 For a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub), the percentages pool
-accounts with a current reading, and the countdown shows the next reported reset.
+the latest account readings, and the countdown shows the next reset.
+Pooled weekly Codex and Claude quotas use monthly subscription prices as relative weights
+when each account's tier and price are known. If a multi-account weekly quota cannot be
+combined, the weekly dial is hidden and individual readings are available in **Settings → Usage**
+and in **All models** on desktop and web.
 Turn on **5-hour depletion ratio** and **Weekly depletion ratio** independently in Settings
 to show each percentage beside its dial label. The ratio estimates how much of the
 remaining quota you will use before reset. Above 100% means you are on pace to run out

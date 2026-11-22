@@ -258,6 +258,65 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
   };
 }
 
+interface AccountPlan {
+  readonly plan: string;
+  readonly planType: string | undefined;
+  readonly checkedAt: number;
+}
+
+function rememberAccountPlan(
+  plans: Map<string, AccountPlan>,
+  key: string | null,
+  plan: string | undefined,
+  planType: string | undefined,
+  observedAt: string,
+) {
+  if (key === null || !plan) return;
+  const checkedAt = Date.parse(observedAt);
+  const previous = plans.get(key);
+  if (
+    !previous ||
+    (isGenericPlan(plan) === isGenericPlan(previous.plan)
+      ? checkedAt > previous.checkedAt
+      : !isGenericPlan(plan))
+  ) {
+    plans.set(key, { plan, planType, checkedAt });
+  }
+}
+
+export function resolveLimitAccountMetadata(
+  providers: readonly ServerProvider[],
+  sources: UsageLimitSourceSnapshots,
+  planSource?: UsageLimitSourceSnapshot,
+) {
+  const native = providers.filter((provider) => provider.enabled);
+  const hubAccounts = sources.flatMap((source) => source.accounts);
+  const resolveKey = accountKeyResolver([...native.map(nativeReport), ...hubAccounts]);
+  const plans = new Map<string, AccountPlan>();
+  for (const provider of native) {
+    if (provider.auth.status !== "authenticated" || provider.auth.type === "customEndpoint") {
+      continue;
+    }
+    rememberAccountPlan(
+      plans,
+      resolveKey(nativeReport(provider)),
+      provider.auth.label,
+      provider.auth.type,
+      provider.checkedAt,
+    );
+  }
+  for (const account of planSource?.accounts ?? hubAccounts) {
+    rememberAccountPlan(
+      plans,
+      resolveKey(account),
+      account.plan,
+      undefined,
+      account.usageLimits.checkedAt,
+    );
+  }
+  return { resolveKey, plans };
+}
+
 const hubAccountName = (account: { readonly id: string }) => account.id.replace(/\.json$/i, "");
 
 // Source ids are environment-local, so only a remote endpoint names the same hub across environments.
@@ -306,6 +365,7 @@ export interface LimitAccount {
   readonly displayName: string | null;
   readonly email: string | undefined;
   readonly plan: string | undefined;
+  readonly planType?: string | undefined;
   readonly accentColor: string | undefined;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -323,8 +383,16 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   const accounts = new Map<string, LimitAccount>();
   const creditSources = new Map<string, LimitAccount>();
   const hubRedeems = new Map<string, LimitAccount>();
-  const planSources = new Map<string, LimitAccount>();
-  const merge = (key: string, next: LimitAccount) => {
+  const configs = [...presentations.values()].map((presentation) => presentation.serverConfig);
+  const { resolveKey, plans } = resolveLimitAccountMetadata(
+    configs.flatMap((config) => config?.providers ?? []),
+    configs.flatMap((config) => config?.usageLimitSources ?? []),
+  );
+  const merge = (resolved: string | null, next: LimitAccount) => {
+    const key = resolved ?? next.key;
+    if (resolved === null) {
+      rememberAccountPlan(plans, key, next.plan, next.planType, next.limits.checkedAt);
+    }
     // Prefer hub redemption to clear its routing cooldown too; displayed balance still follows the freshest read.
     const previousHub = hubRedeems.get(key);
     if (
@@ -341,14 +409,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         Date.parse(next.limits.checkedAt) > Date.parse(previousCredit.limits.checkedAt))
     ) {
       creditSources.set(key, next);
-    }
-    const previousPlan = planSources.get(key);
-    if (
-      next.plan &&
-      (!previousPlan ||
-        Date.parse(next.limits.checkedAt) > Date.parse(previousPlan.limits.checkedAt))
-    ) {
-      planSources.set(key, next);
     }
     const previous = accounts.get(key);
     if (!previous) {
@@ -377,7 +437,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         displayName?.toLowerCase() === PROVIDER_DISPLAY_NAMES[previous.driver]?.toLowerCase()
           ? null
           : displayName,
-      plan: planSources.get(key)?.plan ?? previous.plan ?? next.plan,
       accentColor: previous.accentColor ?? next.accentColor,
       environments,
       sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
@@ -392,24 +451,17 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       },
     });
   };
-  const resolveKey = accountKeyResolver(
-    [...presentations.values()].flatMap((presentation) => [
-      ...(presentation.serverConfig?.providers ?? [])
-        .filter((provider) => provider.enabled)
-        .map(nativeReport),
-      ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
-    ]),
-  );
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
       if (!provider.usageLimits || limitsNotice(provider.usageLimits) !== null) continue;
-      merge(resolveKey(nativeReport(provider)) ?? `${environmentId}:${provider.instanceId}`, {
+      merge(resolveKey(nativeReport(provider)), {
         key: `${environmentId}:${provider.instanceId}`,
         driver: provider.driver,
         displayName: provider.displayName?.trim() || null,
         email: provider.auth.email,
         plan: provider.auth.label,
+        planType: provider.auth.type,
         accentColor: provider.accentColor,
         environments: [{ environmentId, label }],
         sourceLabel: null,
@@ -430,7 +482,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         // A resolved account already has an identity; its public key must stay distinct from others'.
         const hub = resolved ? `${environmentId}:${source.id}` : hubIdentity(environmentId, source);
         const key = `${hub}:${account.id}${account.workspaceId ? `:${account.workspaceId}` : ""}`;
-        merge(resolved ?? key, {
+        merge(resolved, {
           key,
           driver: account.driver,
           displayName: account.email ? null : hubAccountName(account),
@@ -454,7 +506,10 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       }
     }
   }
-  return [...accounts.values()];
+  return [...accounts].map(([key, account]) => {
+    const plan = plans.get(key);
+    return plan ? { ...account, plan: plan.plan, planType: plan.planType } : account;
+  });
 }
 
 export interface LimitPoolMember {
@@ -471,14 +526,14 @@ export interface LimitPoolWindow {
   readonly columns: ReadonlyArray<
     LimitPoolMember | { readonly account: LimitAccount; readonly window: null }
   >;
-  readonly remainingPercent: number;
-  readonly usedPercent: number;
+  readonly remainingPercent: number | null;
+  readonly usedPercent: number | null;
   readonly pace: LimitPace | null;
   readonly burnRatePercentPerSecond?: number;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
-    readonly restoresPercent: number;
+    readonly restoresPercent: number | null;
   }>;
 }
 
@@ -538,6 +593,9 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
 export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
+  {
+    ignoreExpiredWeeklyForSessions = false,
+  }: { readonly ignoreExpiredWeeklyForSessions?: boolean } = {},
 ): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
@@ -554,8 +612,9 @@ export function collectLimitPools(
         (window) => orderWindow && poolKey(driver, window) === poolKey(driver, orderWindow),
       );
       return (
-        (window ? resetMillis(poolMember(account, window, now).window) : null) ??
-        Number.POSITIVE_INFINITY
+        (window
+          ? resetMillis(poolMember(account, window, now, ignoreExpiredWeeklyForSessions).window)
+          : null) ?? Number.POSITIVE_INFINITY
       );
     };
     const sorted = [...members].sort(
@@ -564,7 +623,11 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    return {
+      driver,
+      accounts: sorted,
+      windows: poolWindows(sorted, now, ignoreExpiredWeeklyForSessions),
+    };
   });
 }
 
@@ -572,7 +635,7 @@ function accountSortName(account: LimitAccount): string {
   return (account.displayName ?? account.email ?? account.key).toLowerCase();
 }
 
-const CODEX_PLAN_CAPACITY: Record<string, number> = {
+const CODEX_SESSION_CAPACITY: Record<string, number> = {
   "ChatGPT Plus Subscription": 1,
   "ChatGPT Pro 100 Subscription": 5,
   "ChatGPT Pro 200 Subscription": 20,
@@ -580,15 +643,56 @@ const CODEX_PLAN_CAPACITY: Record<string, number> = {
 // Claude's published plan multipliers describe the session allowance only.
 const CLAUDE_SESSION_CAPACITY: Record<string, number> = { Pro: 1, Max: 5, Ultra: 20 };
 
-function planCapacity(account: LimitAccount, kind: ServerProviderUsageWindow["kind"]) {
+function isGenericPlan(plan: string | undefined) {
+  return plan === "Claude Subscription" || plan === "ChatGPT Subscription";
+}
+
+// Weekly utilization has no absolute capacity in either provider's snapshots.
+const CODEX_WEEKLY_PLAN_PRICE = new Map([
+  ["ChatGPT Plus Subscription", 20],
+  ["ChatGPT Pro 100 Subscription", 100],
+  ["ChatGPT Pro 200 Subscription", 200],
+  ["ChatGPT Pro 500 Subscription", 500],
+]);
+const CLAUDE_WEEKLY_PLAN_PRICE = new Map([
+  ["Claude Pro Subscription", 20],
+  ["Claude Max 5x Subscription", 100],
+  ["Claude Max 20x Subscription", 200],
+  ["Claude Ultra Subscription", 200],
+]);
+
+function weeklyPlanPrice(account: LimitAccount) {
   if (!account.plan) return undefined;
-  if (account.driver === "codex" && (kind === "session" || kind === "weekly")) {
-    return CODEX_PLAN_CAPACITY[account.plan];
+  if (account.driver === "codex") return CODEX_WEEKLY_PLAN_PRICE.get(account.plan);
+  const type = account.planType?.toLowerCase().replace(/[\s_-]+/g, "");
+  // Claude Code also uses the generic Max label when it has no specific tier.
+  if (
+    account.plan === "Claude Max Subscription" &&
+    (type === "claudemax5xsubscription" || type === "max5")
+  ) {
+    return 100;
   }
-  if (account.driver === "claudeAgent" && kind === "session") {
-    return CLAUDE_SESSION_CAPACITY[account.plan];
+  return CLAUDE_WEEKLY_PLAN_PRICE.get(account.plan);
+}
+
+function poolWeights(
+  members: readonly LimitPoolMember[],
+  kind: ServerProviderUsageWindow["kind"],
+  driver: ServerProvider["driver"],
+): readonly number[] | null {
+  if (members.length === 1) return [1];
+  if (isSubscriptionWeeklyWindow(driver, kind)) {
+    const prices = members.map(({ account }) => weeklyPlanPrice(account));
+    return prices.every((price) => price !== undefined) ? prices : null;
   }
-  return undefined;
+  if (kind === "session" && (driver === "codex" || driver === "claudeAgent")) {
+    const capacity = driver === "codex" ? CODEX_SESSION_CAPACITY : CLAUDE_SESSION_CAPACITY;
+    const weights = members.map(({ account }) =>
+      account.plan ? capacity[account.plan] : undefined,
+    );
+    if (weights.every((weight) => weight !== undefined)) return weights;
+  }
+  return members.map(() => 1);
 }
 
 // Codex ids name slots, so pool by kind; other drivers' ids identify distinct allowances.
@@ -596,7 +700,12 @@ function poolKey(driver: ServerProvider["driver"], window: ServerProviderUsageWi
   return driver === "codex" ? window.kind : `${window.kind}:${window.id}`;
 }
 
-function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, now: number) {
+function poolMember(
+  account: LimitAccount,
+  reported: ServerProviderUsageWindow,
+  now: number,
+  ignoreExpiredWeeklyForSessions: boolean,
+) {
   const spentWeekly =
     reported.kind === "session"
       ? account.limits.windows.find(
@@ -604,7 +713,10 @@ function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, 
             window.usedPercent >= 100 &&
             (account.driver === "claudeAgent"
               ? window.id === "seven_day"
-              : account.driver === "codex" && window.kind === "weekly"),
+              : account.driver === "codex" && window.kind === "weekly") &&
+            (!ignoreExpiredWeeklyForSessions ||
+              window.resetsAt === undefined ||
+              Date.parse(window.resetsAt) > now),
         )
       : undefined;
   if (!spentWeekly) return { account, window: reported, refillPercent: reported.usedPercent };
@@ -646,11 +758,15 @@ function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, 
   };
 }
 
-function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
+function poolWindows(
+  accounts: readonly LimitAccount[],
+  now: number,
+  ignoreExpiredWeeklyForSessions: boolean,
+): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
     for (const reported of account.limits.windows) {
-      const member = poolMember(account, reported, now);
+      const member = poolMember(account, reported, now, ignoreExpiredWeeklyForSessions);
       const { window } = member;
       const pooled = poolKey(account.driver, window);
       const key = byKey.get(pooled)?.some((member) => member.account === account)
@@ -664,22 +780,50 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
   const pools = [...byKey].map(([key, members]): LimitPoolWindow => {
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
-    const id = members[0]!.account.driver === "codex" ? key : first.id;
-    // One unknown plan makes the pool incomparable by plan, so every member then counts once.
-    const capacities = members.map((m) => planCapacity(m.account, first.kind));
-    const weights = capacities.every((capacity) => capacity !== undefined)
-      ? capacities
-      : members.map(() => 1);
-    const weightOf = new Map(members.map((m, index) => [m, weights[index]!]));
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    const driver = members[0]!.account.driver;
+    const weights = poolWeights(members, first.kind, driver);
+    const totalWeight = weights?.reduce((sum, weight) => sum + weight, 0) ?? 0;
+    const forecasts = members.map(({ account, window }) =>
+      usageWindowForForecast(window, driver, account.limits.checkedAt, now),
+    );
+    const resets = members
+      .flatMap((member, index) => {
+        const at = resetMillis(forecasts[index]!);
+        return at === null
+          ? []
+          : [
+              {
+                member,
+                at,
+                restoresPercent: weights
+                  ? Math.round((member.refillPercent * weights[index]!) / totalWeight)
+                  : null,
+              },
+            ];
+      })
+      .sort((left, right) => left.at - right.at);
+    const base = {
+      id: driver === "codex" ? key : first.id,
+      kind: first.kind,
+      label: first.label,
+      members,
+      columns: accounts.map(
+        (account) => memberByAccount.get(account.key) ?? { account, window: null },
+      ),
+      resets,
+    };
+    if (weights === null) {
+      return { ...base, usedPercent: null, remainingPercent: null, pace: null };
+    }
     const usedPercent =
-      members.reduce((sum, m) => sum + m.window.usedPercent * weightOf.get(m)!, 0) / totalWeight;
+      members.reduce((sum, m, index) => sum + m.window.usedPercent * weights[index]!, 0) /
+      totalWeight;
     // Judge pace only for windows with reset clocks; others add spend without elapsed time.
-    const timed = members.flatMap((m) => {
-      const share = elapsedShare(m.window, now);
+    const timed = members.flatMap((m, index) => {
+      const share = elapsedShare(forecasts[index]!, now);
       return share === null
         ? []
-        : [{ used: m.window.usedPercent, elapsed: share, weight: weightOf.get(m)! }];
+        : [{ used: m.window.usedPercent, elapsed: share, weight: weights[index]! }];
     });
     const timedWeight = timed.reduce((sum, t) => sum + t.weight, 0);
     const timedUsed = timed.reduce((sum, t) => sum + t.used * t.weight, 0) / timedWeight;
@@ -687,43 +831,16 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       timed.length > 0
         ? timed.reduce((sum, t) => sum + t.elapsed * t.weight, 0) / timedWeight
         : null;
-    const resets = members
-      .flatMap((member) => {
-        const at = resetMillis(member.window);
-        return at === null
-          ? []
-          : [
-              {
-                member,
-                at,
-                restoresPercent: Math.round(
-                  (member.refillPercent * weightOf.get(member)!) / totalWeight,
-                ),
-              },
-            ];
-      })
-      .sort((left, right) => left.at - right.at);
-    const measuredMembers = members.filter((m) => m.window.burnRatePercentPerSecond !== undefined);
-    const burnRate =
-      measuredMembers.length === members.length
-        ? measuredMembers.reduce(
-            (sum, m) => sum + m.window.burnRatePercentPerSecond! * weightOf.get(m)!,
-            0,
-          ) / totalWeight
-        : undefined;
+    const burnRates = forecasts.map((window) => window.burnRatePercentPerSecond);
+    const burnRate = burnRates.every((rate) => rate !== undefined)
+      ? burnRates.reduce((sum, rate, index) => sum + rate * weights[index]!, 0) / totalWeight
+      : undefined;
     return {
-      id,
-      kind: first.kind,
-      label: first.label,
-      members,
-      columns: accounts.map(
-        (account) => memberByAccount.get(account.key) ?? { account, window: null },
-      ),
+      ...base,
       usedPercent,
       remainingPercent: Math.round(100 - usedPercent),
       pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
       ...(burnRate === undefined ? {} : { burnRatePercentPerSecond: burnRate }),
-      resets,
     };
   });
   return pools.sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
@@ -747,6 +864,30 @@ function resetMillis(window: ServerProviderUsageWindow): number | null {
   if (window.resetsAt === undefined) return null;
   const at = Date.parse(window.resetsAt);
   return Number.isFinite(at) ? at : null;
+}
+
+export function isSubscriptionWeeklyWindow(
+  driver: ServerProvider["driver"],
+  kind: ServerProviderUsageWindow["kind"],
+): boolean {
+  return kind === "weekly" && (driver === "codex" || driver === "claudeAgent");
+}
+
+export function usageWindowForForecast(
+  window: ServerProviderUsageWindow,
+  driver: ServerProvider["driver"],
+  checkedAt: string,
+  now: number,
+): ServerProviderUsageWindow {
+  if (!isSubscriptionWeeklyWindow(driver, window.kind)) return window;
+  const reset = resetMillis(window);
+  if (reset !== null && reset > Math.max(now, Date.parse(checkedAt))) return window;
+  return {
+    ...window,
+    resetsAt: undefined,
+    windowDurationMins: undefined,
+    burnRatePercentPerSecond: undefined,
+  };
 }
 
 export function elapsedShare(window: ServerProviderUsageWindow, now: number): number | null {
