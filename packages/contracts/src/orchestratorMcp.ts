@@ -813,13 +813,13 @@ export const OrchestratorMcpScheduleTaskInput = Schema.Struct({
   bindToCurrentThread: Schema.optional(
     Schema.Boolean.annotate({
       description:
-        "True posts here (own project only). False: a new thread each run, unless freshSession. Unset: true in own project; elsewhere runs continue one thread the first run makes. Updates keep it.",
+        "True posts here (own project). False: new thread per run. Unset: true in own project, else one thread the first run makes. Updates keep it.",
     }),
   ),
   freshSession: Schema.optional(
     Schema.Boolean.annotate({
       description:
-        "Default false: continue the bound conversation. True starts each run fresh without earlier context. Unbound: the first run makes the thread.",
+        "Default false: continue the conversation. True: one thread, each run without earlier context.",
     }),
   ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
