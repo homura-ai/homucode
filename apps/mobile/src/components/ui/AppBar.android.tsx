@@ -188,6 +188,7 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
       title={props.title}
       titleContent={props.titleContent}
       subtitle={props.subtitle}
+      titleAccessory={props.titleAccessory}
       onBack={props.onClose ? undefined : props.onBack}
       leading={
         (props.onClose ? (

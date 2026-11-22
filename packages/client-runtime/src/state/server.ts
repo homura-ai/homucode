@@ -1928,6 +1928,12 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:check-secret-source",
       tag: WS_METHODS.serverCheckSecretSource,
     }),
+    statusLineAccounting: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:status-line-accounting",
+      tag: WS_METHODS.serverGetStatusLineAccounting,
+      staleTimeMs: 60_000,
+      refreshIntervalMs: 60_000,
+    }),
     renderStatusLine: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:render-status-line",
       tag: WS_METHODS.serverRenderStatusLine,

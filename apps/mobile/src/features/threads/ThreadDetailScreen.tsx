@@ -14,11 +14,7 @@ import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
-import {
-  useChildThreadInputs,
-  useThreadContextWindow,
-  useThreadReportedModelSelection,
-} from "../../state/entities";
+import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -87,6 +83,7 @@ import type { ActiveTurnComposerAction } from "@t3tools/client-runtime/state/com
 import * as Haptics from "expo-haptics";
 import {
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useRef,
@@ -122,6 +119,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { ThreadBarInsetConsumed } from "./thread-status-bar-inset";
 import { useBarOverlap } from "../../components/ui/useBarInset";
 import {
   useWorkspaceContentWidth,
@@ -218,7 +216,6 @@ import {
   type ThreadComposerProps,
 } from "./ThreadComposer";
 import { ComposerPopoverHost } from "./ComposerPopoverHost";
-import { ThreadStatusBar } from "./ThreadStatusBar";
 import { ThreadFeed, type ThreadFeedHistoryControls } from "./ThreadFeed";
 import { WorkspaceMutationIdProvider } from "./WorkspaceMutationIdProvider";
 import { useThreadTurnSubagents } from "./ThreadAgentsSheet";
@@ -442,7 +439,6 @@ function ThreadDetailBody(
   const openInspector = useOpenThreadInspector();
   const { session: voiceInputSession } = useGlobalVoiceInput();
   const reportedModelSelection = useThreadReportedModelSelection(props.selectedThreadDetailRef);
-  const contextWindow = useThreadContextWindow(props.selectedThreadDetailRef);
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
   );
@@ -509,7 +505,8 @@ function ThreadDetailBody(
     }
   };
   const windowHeight = useWindowDimensions().height;
-  const navigationHeaderHeight = useBarOverlap();
+  const barOverlap = useBarOverlap();
+  const navigationHeaderHeight = useContext(ThreadBarInsetConsumed) ? 0 : barOverlap;
   const [screenMetrics, setScreenMetrics] = useState<NativeLayoutMetrics | null>(null);
   const columnMetrics = useNativeColumnLayoutMetrics();
   const nativeMetrics = usesNativeWorkspaceColumns ? columnMetrics : screenMetrics;
@@ -2005,22 +2002,6 @@ function ThreadDetailBody(
                         canSwitchProvider={props.canSwitchThreadProvider}
                         onHeightChange={handleComposerHeightChange}
                         onEditorFocusChange={handleOwnedInputFocusChange}
-                        statusBar={
-                          props.draftMode ? null : (
-                            <ThreadStatusBar
-                              environmentId={props.environmentId}
-                              createdAt={props.selectedThread.createdAt}
-                              source={{
-                                threadId: props.selectedThread.id,
-                                cwd: props.threadCwd,
-                                modelSelection: props.selectedThread.modelSelection,
-                                providers: props.serverConfig?.providers ?? [],
-                                usageLimitSources: props.serverConfig?.usageLimitSources ?? [],
-                                contextWindow,
-                              }}
-                            />
-                          )
-                        }
                       />
                     </>
                   )}

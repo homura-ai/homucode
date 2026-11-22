@@ -89,6 +89,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverDiscoverSourceControl]: "server",
   [WS_METHODS.serverCheckSecretSource]: "server",
   [WS_METHODS.serverRenderStatusLine]: "server",
+  [WS_METHODS.serverGetStatusLineAccounting]: "server",
   [WS_METHODS.serverGetTraceDiagnostics]: "server",
   [WS_METHODS.serverGetProcessDiagnostics]: "server",
   [WS_METHODS.serverGetHostResources]: "server",

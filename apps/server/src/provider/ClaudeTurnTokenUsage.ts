@@ -49,6 +49,21 @@ function withEarlierSegmentUsage(
   return total;
 }
 
+// One-hour cache writes across the turn's segments; unknown when any segment that wrote omits the split.
+function oneHourCacheWrites(segments: ReadonlyArray<unknown>): number | undefined {
+  let total = 0;
+  for (const segment of segments) {
+    const usage = (segment ?? {}) as Record<string, unknown>;
+    const split = usage.cache_creation as Record<string, unknown> | null | undefined;
+    const tokens = finiteNonNegativeInteger(split?.ephemeral_1h_input_tokens);
+    if (tokens !== undefined) total += tokens;
+    else if ((finiteNonNegativeInteger(usage.cache_creation_input_tokens) ?? 0) > 0) {
+      return undefined;
+    }
+  }
+  return total;
+}
+
 /** Per-model totals from the SDK's `modelUsage`, which grows for the life of one CLI process. */
 export type ClaudeModelLedger = ReadonlyMap<
   string,
@@ -157,6 +172,10 @@ export function normalizeClaudeTurnTokenUsage(
   const uncachedInputTokens = finiteNonNegativeInteger(usage.input_tokens);
   const cachedInputTokens = finiteNonNegativeInteger(usage.cache_read_input_tokens);
   const cacheCreationTokens = finiteNonNegativeInteger(usage.cache_creation_input_tokens);
+  const cacheCreation1hTokens =
+    cacheCreationTokens === undefined
+      ? undefined
+      : oneHourCacheWrites([finalUsage, ...earlierSegmentUsage]);
   const rawOutputTokens = finiteNonNegativeInteger(usage.output_tokens);
   const outputDetails = usage.output_tokens_details as Record<string, unknown> | undefined;
   const thinkingTokens = finiteNonNegativeInteger(outputDetails?.thinking_tokens);
@@ -208,6 +227,11 @@ export function normalizeClaudeTurnTokenUsage(
     usageScope: "main_agent",
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+    ...(cacheCreation1hTokens !== undefined &&
+    cacheCreationTokens !== undefined &&
+    cacheCreationTokens > 0
+      ? { cacheCreation1hTokens: Math.min(cacheCreation1hTokens, cacheCreationTokens) }
+      : {}),
     ...(thinkingTokens !== undefined && rawOutputTokens !== undefined
       ? { reasoningTokens: Math.min(rawOutputTokens, thinkingTokens) }
       : {}),

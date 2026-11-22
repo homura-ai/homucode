@@ -134,10 +134,17 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
 
   const low = (remaining: number) => remaining <= 10;
   const timeLeft = (account: WidgetLimitAccount) =>
-    account.resetsAt && account.durationMs
+    account.resetsAt && account.resetsAt > now && account.durationMs
       ? Math.max(0, Math.min(1, (account.resetsAt - now) / account.durationMs))
       : null;
-  const paceArrow = (accounts: WidgetLimitAccount[]) => {
+  const paceArrow = (window: Extract<Line, { type: "window" }>["window"]) => {
+    const accounts = window.accounts ?? [];
+    if (
+      window.kind === "weekly" &&
+      accounts.filter((account) => account.remaining !== undefined).length > 1
+    ) {
+      return "";
+    }
     const timed = accounts.flatMap((account) => {
       const left = timeLeft(account);
       return left === null || account.remaining === undefined
@@ -159,7 +166,10 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
     if (account.remaining === undefined)
       return <Spacer key={account.name} modifiers={[size(segmentWidth, barHeight)]} />;
     const fill = (segmentWidth * account.remaining) / 100;
-    const refill = (segmentWidth * Math.min(100 - account.remaining, account.refill ?? 0)) / 100;
+    const upcoming = account.resetsAt !== undefined && account.resetsAt > now;
+    const refill = upcoming
+      ? (segmentWidth * Math.min(100 - account.remaining, account.refill ?? 0)) / 100
+      : 0;
     const left = timeLeft(account);
     const tick =
       left === null ? null : Math.max(0, Math.min(segmentWidth - 5, segmentWidth * left - 2.5));
@@ -219,7 +229,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
             </Text>
           </Row>
         ) : null}
-        {labels.reset && account.reset ? (
+        {labels.reset && upcoming && account.reset ? (
           <Box
             contentAlignment="centerEnd"
             modifiers={[size(segmentWidth, barHeight), padding(0, 0, 3, 0)]}
@@ -315,7 +325,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
               style={{ fontSize: 10 }}
               modifiers={[padding(3, 0, 0, 3)]}
             >
-              {`${text.left}${paceArrow(line.window.accounts ?? [])}`}
+              {`${text.left}${paceArrow(line.window)}`}
             </Text>
           </Row>
         </Column>

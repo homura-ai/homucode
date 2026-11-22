@@ -632,6 +632,7 @@ it("decodes setup behavior defaults without opting into optional features", () =
     buildOutputFolder: "",
     buildAppImageFolder: "",
     statusLineEnabled: false,
+    statusLineHideSessionLimit: false,
     threadTitleIncludeProjectName: true,
     threadTitleIdPrefix: false,
   });
@@ -639,8 +640,20 @@ it("decodes setup behavior defaults without opting into optional features", () =
     settingsSyncEnabled: false,
     fasterPhoneLaunch: false,
     showMessageSenderLabels: false,
+    statusLineShowAllModels: true,
+    statusLineShowModelNames: false,
   });
   const persisted = Schema.decodeUnknownSync(PersistedClientSettingsSchema);
+  expect(persisted({ statusLineShowAllModels: true }).statusLineShowModelNames).toBe(false);
+  expect(
+    persisted({ statusLineShowAllModels: false, statusLineShowModelNames: true }),
+  ).toMatchObject({
+    statusLineShowAllModels: false,
+    statusLineShowModelNames: true,
+  });
+  expect(decodeClientSettingsPatch({ statusLineShowModelNames: true })).toEqual({
+    statusLineShowModelNames: true,
+  });
   expect(persisted({}).showMessageSenderLabels).toBe(false);
   expect(persisted({ showMessageSenderLabels: true }).showMessageSenderLabels).toBe(true);
   expect(persisted({}).settingsSyncEnabled).toBe(true);

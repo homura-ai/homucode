@@ -1358,6 +1358,9 @@ export const OrchestrationV2ProviderTurn = Schema.Struct({
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
   tokenUsage: Schema.optional(OrchestrationV2ProviderTurnTokenUsage),
   turnTokenUsage: Schema.optional(TurnTokenUsage),
+  apiDurationMs: Schema.optional(NonNegativeInt),
+  outputStyle: Schema.optional(TrimmedNonEmptyString),
+  apiSpeed: Schema.optional(Schema.Literals(["standard", "fast", "ultrafast"])),
   /** The model the provider reported running this turn's root agent, which can differ from the requested one. */
   model: Schema.optional(TrimmedNonEmptyString),
 });

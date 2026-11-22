@@ -44,6 +44,9 @@ import {
   createOverrideRateTable,
   isUnlistedModel,
   parseRateTable,
+  priceUsage,
+  type PricedRecord,
+  type PricedUsage,
   type RateTable,
 } from "./usagePricing.ts";
 import {
@@ -160,6 +163,10 @@ export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    readonly priceRecords: (
+      provider: UsageProviderKind,
+      records: readonly PricedRecord[],
+    ) => Effect.Effect<readonly PricedUsage[], UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
 >()("t3/usage/UsageService") {}
@@ -1252,7 +1259,35 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates, awaitPersisted } as const;
+  const priceRecords = Effect.fn("UsageService.priceRecords")(function* (
+    provider: UsageProviderKind,
+    records: readonly PricedRecord[],
+  ) {
+    if (records.length === 0) return [];
+    const settings = yield* readSettings;
+    const aliases = resolveModelAliases(settings.usageModelAliases);
+    const overrides = createOverrideRateTable(settings.usagePriceOverrides);
+    const normalized = records.map(({ rateModel: reportedRateModel, ...record }) => {
+      const alias = aliases.get(record.model);
+      const model = alias ?? record.model;
+      const rateModel =
+        alias === undefined
+          ? (reportedRateModel ?? providerRateModels.get(provider)?.(model))
+          : undefined;
+      return { ...record, model, ...(rateModel === undefined ? {} : { rateModel }) };
+    });
+    yield* ensureRates(false);
+    yield* refreshForUnlistedModels(
+      new Set(
+        normalized.flatMap(({ model, rateModel }) =>
+          overrides.has(model.trim()) ? [] : [rateModel ?? model],
+        ),
+      ),
+    );
+    return normalized.map((record) => priceUsage(rates, record, overrides));
+  });
+
+  return { readSummary, refreshRates, priceRecords, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

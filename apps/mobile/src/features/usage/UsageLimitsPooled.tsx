@@ -11,6 +11,7 @@ import {
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
+  usageWindowForForecast,
 } from "@t3tools/shared/usageLimits";
 import {
   collectExternalUsageLinks,
@@ -28,6 +29,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { MessageResolver } from "../../i18n/messages";
+import { useNowMinuteMs } from "../../lib/clock";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { refillLabel, ResetCredits, resetLabels } from "./UsageLimitsSection";
@@ -193,14 +195,13 @@ function PoolWindowCard({
   const inlineLabels = wide && segmentWidth >= 96;
   const inlineReset = wide && segmentWidth >= 150;
   const inlineName = wide && segmentWidth >= 220;
-  const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const nextRefill = pool.resets.find((reset) => (reset.restoresPercent ?? 0) > 0);
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsUsageAccount", {
       accountKey: account.key,
       windowId: pool.id,
       windowKind: pool.kind,
       environmentIds,
-      now,
     });
   const summary = (
     <>
@@ -209,23 +210,25 @@ function PoolWindowCard({
           {label !== null ? (
             <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
           ) : null}
-          <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-sm text-foreground-muted">
-              <T>
-                <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-                  <Var>{pool.remainingPercent}</Var>%
-                </Text>{" "}
-                left
-              </T>
-            </Text>
-          </View>
+          {pool.remainingPercent !== null ? (
+            <View className="flex-row items-baseline gap-1.5">
+              <Text className="text-sm text-foreground-muted">
+                <T>
+                  <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+                    <Var>{pool.remainingPercent}</Var>%
+                  </Text>{" "}
+                  left
+                </T>
+              </Text>
+            </View>
+          ) : null}
         </View>
         {pool.pace ? (
           <Text className="text-xs text-foreground-tertiary">{m(PACE_LABEL[pool.pace])}</Text>
         ) : null}
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      {nextRefill ? (
+      {nextRefill?.restoresPercent != null ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
           {refillLabel(nextRefill.member.window, now, nextRefill.restoresPercent, m)}
         </Text>
@@ -246,9 +249,15 @@ function PoolWindowCard({
             />
           );
         const { account, window } = member;
-        const timeLeft = paceRemainingPercent(window, now);
+        const forecast = usageWindowForForecast(
+          window,
+          account.driver,
+          account.limits.checkedAt,
+          now,
+        );
+        const timeLeft = paceRemainingPercent(forecast, now);
         const credits = account.limits.resetCredits?.availableCount ?? 0;
-        const resetsIn = resetLabels(window, now, m)?.compact;
+        const resetsIn = resetLabels(forecast, now, m)?.compact;
         return (
           <Pressable
             key={account.key}
@@ -280,7 +289,7 @@ function PoolWindowCard({
                 <AccountSegment
                   remaining={remainingPercent(window)}
                   color={normalizeProviderAccentColor(account.accentColor) ?? color}
-                  refillPercent={window.resetsAt ? member.refillPercent : 0}
+                  refillPercent={forecast.resetsAt ? member.refillPercent : 0}
                 />
               </View>
             </PaceGap>
@@ -352,7 +361,13 @@ function PoolWindowCard({
         if (!window) return null;
         const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
         const credits = account.limits.resetCredits?.availableCount ?? 0;
-        const reset = resetLabels(window, now, m);
+        const forecast = usageWindowForForecast(
+          window,
+          account.driver,
+          account.limits.checkedAt,
+          now,
+        );
+        const reset = resetLabels(forecast, now, m);
         const resetsIn = reset?.full;
         return (
           <Pressable
@@ -589,13 +604,13 @@ type AccountScreenProps = StaticScreenProps<{
   windowId: string;
   windowKind: LimitPoolWindow["kind"];
   environmentIds: readonly string[] | null;
-  now: number;
 }>;
 
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
+  const { accountKey, windowId, windowKind, environmentIds } = route.params;
+  const now = useNowMinuteMs();
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
   const selected =
@@ -608,8 +623,14 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
     .find((candidate) => candidate.driver === account?.driver)
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
-  const evenPace = window ? paceRemainingPercent(window, now) : null;
-  const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
+  const forecast =
+    account && window
+      ? usageWindowForForecast(window, account.driver, account.limits.checkedAt, now)
+      : null;
+  const evenPace = forecast ? paceRemainingPercent(forecast, now) : null;
+  const restoresPercent =
+    pool?.resets.find((candidate) => candidate.member.account.key === accountKey)
+      ?.restoresPercent ?? 0;
   const [revealed, setRevealed] = useState(false);
   const gt = useGT();
   return (
@@ -661,12 +682,12 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   <Var>{remainingPercent(window)}</Var>% left
                 </T>
               </Text>
-              {window.resetsAt ? (
+              {forecast?.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   <T>
                     Resets{" "}
                     <Var>
-                      {new Date(window.resetsAt).toLocaleString(undefined, {
+                      {new Date(forecast.resetsAt).toLocaleString(undefined, {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })}
@@ -681,10 +702,10 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   </T>
                 </Text>
               ) : null}
-              {reset && reset.restoresPercent > 0 ? (
+              {restoresPercent > 0 ? (
                 <Text className="text-sm text-foreground-muted">
                   <T>
-                    Restores <Var>{reset.restoresPercent}</Var>% of the pool
+                    Restores <Var>{restoresPercent}</Var>% of the pool
                   </T>
                 </Text>
               ) : null}

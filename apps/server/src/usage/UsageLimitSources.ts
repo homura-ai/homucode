@@ -29,6 +29,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
+import * as UsageBurnRate from "../statusLine/UsageBurnRate.ts";
 import * as Settings from "../serverSettings.ts";
 import { windowLimitsModel } from "../provider/claudeUsageLimits.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
@@ -113,6 +114,7 @@ function missingManagementKey(config: UsageLimitSourceConfig): string {
 /** @public */
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
+  const burnRate = yield* UsageBurnRate.UsageBurnRate;
   const settingsService = yield* Settings.ServerSettingsService;
   const secrets = yield* SecretResolver.SecretResolver;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -158,8 +160,24 @@ export const make = Effect.gen(function* () {
     const { codexModelCooldowns, accounts: readings } = accounts.success;
     return {
       ...base,
-      accounts: readings,
       ...(codexModelCooldowns === undefined ? {} : { codexModelCooldowns }),
+      accounts: yield* Effect.forEach(readings, (account) =>
+        burnRate
+          .record(
+            [
+              "hub",
+              base.endpoint,
+              id,
+              account.driver,
+              account.id,
+              account.email,
+              account.workspaceId,
+              account.usageLimits.credentialFingerprint,
+            ],
+            account.usageLimits,
+          )
+          .pipe(Effect.map((usageLimits) => ({ ...account, usageLimits }))),
+      ),
     };
   });
 

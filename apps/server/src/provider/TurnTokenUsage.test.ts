@@ -106,6 +106,32 @@ describe("billable native turn usage", () => {
     });
   });
 
+  it("keeps Claude's one-hour cache writes across steered segments", () => {
+    const segment = (fiveMinute: number, oneHour: number) => ({
+      input_tokens: 1,
+      cache_creation_input_tokens: fiveMinute + oneHour,
+      cache_creation: { ephemeral_5m_input_tokens: fiveMinute, ephemeral_1h_input_tokens: oneHour },
+      output_tokens: 1,
+    });
+    expect(
+      normalizeClaudeTurnTokenUsage(
+        { subtype: "success", usage: segment(2, 30) },
+        false,
+        "completed",
+        [segment(0, 8)],
+      ),
+    ).toMatchObject({ cacheCreationTokens: 40, cacheCreation1hTokens: 38 });
+    // A segment that wrote without reporting the split leaves the turn's split unknown.
+    expect(
+      normalizeClaudeTurnTokenUsage(
+        { subtype: "success", usage: segment(2, 30) },
+        false,
+        "completed",
+        [{ input_tokens: 1, cache_creation_input_tokens: 5, output_tokens: 1 }],
+      ),
+    ).not.toHaveProperty("cacheCreation1hTokens");
+  });
+
   it("does not turn a zeroed Claude crash result into a measured zero-cost turn", () => {
     expect(
       normalizeClaudeTurnTokenUsage(

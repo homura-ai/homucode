@@ -24,6 +24,7 @@ import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilt
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { StatusLineBurnTauControl } from "./components/StatusLineBurnTauControl";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import {
@@ -160,10 +161,7 @@ function HomuCodeServerSettings() {
   const canWrite =
     !projectSelected && targets.every((target) => writable.has(target.environment.environmentId));
 
-  const write = (
-    key: "statusLineEnabled" | "autoreviewEnabled" | "subagentsInheritParentPin",
-    enabled: boolean,
-  ) => {
+  const write = (patch: ServerSettingsPatch) => {
     if (
       writing.current ||
       !canWrite ||
@@ -172,7 +170,6 @@ function HomuCodeServerSettings() {
       )
     )
       return;
-    const patch: ServerSettingsPatch = { [key]: enabled };
     writing.current = true;
     setPending(true);
     void writeSettings(targets, planMobileScopedSettingsPatch(targets, false, patch)).finally(
@@ -184,23 +181,83 @@ function HomuCodeServerSettings() {
   };
 
   if (targets.length === 0) return null;
+  const depletionRatioDescription = gt(
+    "Show the time until reset as a percentage of the time until quota is projected to run out.",
+  );
   return (
     <>
       <SettingsSection title={gt("Status line")}>
         <SettingsSwitchRow
           icon="terminal"
           label={gt("Status line")}
-          subtitle={gt(
-            "Show the model, context, and usage limits under the composer. Set its command on desktop or web.",
-          )}
+          subtitle={gt("Show the model, context, usage limits, and thread cost in the top bar.")}
           value={uniformMobileSetting(targets, "statusLineEnabled")}
           disabled={
             !canWrite ||
             pending ||
             managedSettingReason(targets, ["statusLineEnabled"], resolve) !== undefined
           }
-          onValueChange={(enabled) => write("statusLineEnabled", enabled)}
+          onValueChange={(enabled) => write({ statusLineEnabled: enabled })}
         />
+        {(
+          [
+            [
+              "statusLineHideSessionLimit",
+              gt("Hide 5-hour limit"),
+              gt("When off, show the 5-hour limit when it is available."),
+            ],
+            [
+              "statusLineShowSessionDepletionRatio",
+              gt("5-hour depletion ratio"),
+              depletionRatioDescription,
+            ],
+            [
+              "statusLineShowWeeklyDepletionRatio",
+              gt("Weekly depletion ratio"),
+              depletionRatioDescription,
+            ],
+          ] as const
+        ).map(([setting, label, description]) => (
+          <SettingsSwitchRow
+            key={setting}
+            icon="timer"
+            label={label}
+            subtitle={description}
+            value={uniformMobileSetting(targets, setting)}
+            disabled={
+              !canWrite ||
+              pending ||
+              managedSettingReason(targets, [setting], resolve) !== undefined
+            }
+            onValueChange={(enabled) => write({ [setting]: enabled })}
+          />
+        ))}
+        <SettingsSwitchRow
+          label={gt("Use API prices for thread cost")}
+          subtitle={gt("Use API list prices instead of estimating the subscription cost.")}
+          value={uniformMobileSetting(targets, "statusLineUseApiPrice")}
+          disabled={
+            !canWrite ||
+            pending ||
+            managedSettingReason(targets, ["statusLineUseApiPrice"], resolve) !== undefined
+          }
+          onValueChange={(statusLineUseApiPrice) => write({ statusLineUseApiPrice })}
+        />
+        {(["statusLineSessionBurnTauMinutes", "statusLineWeeklyBurnTauMinutes"] as const).map(
+          (setting) => (
+            <StatusLineBurnTauControl
+              key={setting}
+              setting={setting}
+              value={uniformMobileSetting(targets, setting)}
+              disabled={
+                !canWrite ||
+                pending ||
+                managedSettingReason(targets, [setting], resolve) !== undefined
+              }
+              onChange={(minutes) => write({ [setting]: minutes })}
+            />
+          ),
+        )}
       </SettingsSection>
       {!projectSelected ? (
         <SettingsSection title={gt("Subagents")}>
@@ -216,7 +273,7 @@ function HomuCodeServerSettings() {
               pending ||
               managedSettingReason(targets, ["subagentsInheritParentPin"], resolve) !== undefined
             }
-            onValueChange={(enabled) => write("subagentsInheritParentPin", enabled)}
+            onValueChange={(enabled) => write({ subagentsInheritParentPin: enabled })}
           />
         </SettingsSection>
       ) : null}
@@ -234,7 +291,7 @@ function HomuCodeServerSettings() {
               pending ||
               managedSettingReason(targets, ["autoreviewEnabled"], resolve) !== undefined
             }
-            onValueChange={(enabled) => write("autoreviewEnabled", enabled)}
+            onValueChange={(enabled) => write({ autoreviewEnabled: enabled })}
           />
         </SettingsSection>
       ) : null}

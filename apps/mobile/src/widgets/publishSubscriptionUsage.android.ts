@@ -1,6 +1,9 @@
 import { requireOptionalNativeModule } from "expo";
 import * as Linking from "expo-linking";
-import type { SubscriptionUsageSnapshot } from "./subscriptionUsageSnapshot";
+import {
+  subscriptionUsageDeadlines,
+  type SubscriptionUsageSnapshot,
+} from "./subscriptionUsageSnapshot";
 
 let tapUrl: string | undefined;
 let listening = false;
@@ -20,11 +23,8 @@ export async function publishSubscriptionUsage(snapshot: SubscriptionUsageSnapsh
     });
   }
   widget.updateSnapshot(snapshot);
-  // Android lacks timelines; alarms re-render snapshots at expiry to mark readings stale.
+  // Android lacks timelines; alarms re-render snapshots when resets or expiry pass.
   requireOptionalNativeModule<{ schedule: (name: string, deadlines: number[]) => void }>(
     "T3WidgetExpiry",
-  )?.schedule(
-    "SubscriptionUsage",
-    snapshot.providers.map((provider) => provider.expiresAt).filter((at) => at > 0),
-  );
+  )?.schedule("SubscriptionUsage", subscriptionUsageDeadlines(snapshot, Date.now()));
 }

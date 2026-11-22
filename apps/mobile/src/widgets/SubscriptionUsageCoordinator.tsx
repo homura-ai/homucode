@@ -22,6 +22,7 @@ function makeSnapshotAtom(resolve: MessageResolver) {
     buildSubscriptionUsageSnapshot(
       get(environmentPresentations.presentationsWithProvidersAtom),
       Linking.createURL("settings/usage", { queryParams: { tab: "limits" } }),
+      Date.now(),
       Platform.OS === "android" ? Infinity : 6,
       resolve,
     ),

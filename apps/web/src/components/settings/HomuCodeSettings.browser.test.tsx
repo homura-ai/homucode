@@ -63,9 +63,15 @@ it("explains an unavailable environment on the agent behavior page", async () =>
   await using _app = await render(<AppRoot router={router} />, { router: false });
   await expect.element(page.getByText("This environment is no longer available.")).toBeVisible();
   const allModels = page.getByRole("checkbox", { name: "Show all models in status line details" });
+  const modelNames = page.getByRole("checkbox", { name: "Show model names" });
+  await expect.element(allModels).toBeChecked();
+  await expect.element(modelNames).not.toBeChecked();
+  await userEvent.click(modelNames);
+  await expect.element(modelNames).toBeChecked();
   await expect.element(allModels).toBeChecked();
   await userEvent.click(allModels);
   await expect.element(allModels).not.toBeChecked();
+  await expect.element(modelNames).toBeChecked();
 
   await expect
     .element(page.getByRole("switch", { name: "Show Building Homu settings" }))

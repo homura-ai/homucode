@@ -42,7 +42,12 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SecretSourceCheckResult } from "./settingsSecretValue.ts";
-import { StatusLineRenderInput, StatusLineRenderResult } from "./statusLine.ts";
+import {
+  StatusLineAccounting,
+  StatusLineAccountingInput,
+  StatusLineRenderInput,
+  StatusLineRenderResult,
+} from "./statusLine.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
   ProviderAuthCancelInput,
@@ -573,6 +578,7 @@ export const WS_METHODS = {
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverCheckSecretSource: "server.checkSecretSource",
   serverRenderStatusLine: "server.renderStatusLine",
+  serverGetStatusLineAccounting: "server.getStatusLineAccounting",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
   serverPrepareAcpRegistryAgent: "server.prepareAcpRegistryAgent",
   serverUninstallAcpRegistryManagedBinary: "server.uninstallAcpRegistryManagedBinary",
@@ -984,6 +990,12 @@ const WsServerCheckSecretSourceRpc = Rpc.make(WS_METHODS.serverCheckSecretSource
 const WsServerRenderStatusLineRpc = Rpc.make(WS_METHODS.serverRenderStatusLine, {
   payload: StatusLineRenderInput,
   success: StatusLineRenderResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetStatusLineAccountingRpc = Rpc.make(WS_METHODS.serverGetStatusLineAccounting, {
+  payload: StatusLineAccountingInput,
+  success: Schema.NullOr(StatusLineAccounting),
   error: EnvironmentAuthorizationError,
 });
 
@@ -2402,6 +2414,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerDiscoverSourceControlRpc,
   WsServerCheckSecretSourceRpc,
   WsServerRenderStatusLineRpc,
+  WsServerGetStatusLineAccountingRpc,
   WsServerSearchAcpRegistryRpc,
   WsServerPrepareAcpRegistryAgentRpc,
   WsServerUninstallAcpRegistryManagedBinaryRpc,

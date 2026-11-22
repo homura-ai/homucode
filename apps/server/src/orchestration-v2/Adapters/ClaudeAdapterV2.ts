@@ -5183,6 +5183,7 @@ interface ActiveClaudeTurnContext {
   // The title a `session_title_changed` frame reported; a `/rename` result applies it to the thread.
   nativeSessionTitle: string | null;
   // Steers end segments whose usage is excluded from the final result; bill them too, oldest first.
+  steeredApiDurationMs: number;
   readonly steeredSegmentUsage: Array<SDKResultMessage["usage"]>;
   // Set as finalization starts: a steer admitted later would stay pending
   // forever, so it fails and the orchestrator follows up instead.
@@ -5273,6 +5274,7 @@ interface ClaudeLiveQueryContext {
   // From system/init; feature-detects control requests such as MCP Apps.
   capabilities: ReadonlySet<string>;
   claudeCodeVersion: string | undefined;
+  outputStyle: string | undefined;
   permissionMode: PermissionMode;
   stopping: boolean;
   // A turn that had not attached when the CLI exited fails its start with this cause.
@@ -9385,6 +9387,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             assistant.fallbackText = "";
           }
           context.steeredSegmentUsage.push(context.heldResult.usage);
+          context.steeredApiDurationMs += context.heldResult.duration_api_ms ?? 0;
           context.steeredLedgerUsage = addClaudeLedgerUsage(
             context.steeredLedgerUsage,
             resultLedgerUsage.get(context.heldResult),
@@ -9666,6 +9669,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   failure: null,
                   threadDisposition,
                 };
+          const query = yield* Ref.get(queryContext);
+          const outputStyle =
+            query?.nativeThreadId === input.context.nativeThreadId ? query.outputStyle : undefined;
+          const apiDurationMs = input.result?.duration_api_ms;
+          const apiSpeed = input.result?.usage?.speed;
           yield* Effect.all(
             [
               emitProviderEvent({
@@ -9677,6 +9685,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     status: input.status,
                     completedAt: input.completedAt,
                   }),
+                  ...(apiDurationMs === undefined
+                    ? {}
+                    : {
+                        apiDurationMs: Math.max(
+                          0,
+                          Math.round(apiDurationMs + input.context.steeredApiDurationMs),
+                        ),
+                      }),
+                  ...(outputStyle ? { outputStyle } : {}),
+                  ...(apiSpeed === "fast" || apiSpeed === "standard" ? { apiSpeed } : {}),
                   turnTokenUsage: normalizeClaudeTurnTokenUsage(
                     input.result,
                     input.context.subagentsByTaskId.size > 0 ||
@@ -12058,6 +12076,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 });
               }
               context.steeredSegmentUsage.push(message.usage);
+              context.steeredApiDurationMs += message.duration_api_ms ?? 0;
               context.steeredLedgerUsage = addClaudeLedgerUsage(
                 context.steeredLedgerUsage,
                 resultLedgerUsage.get(message),
@@ -13284,6 +13303,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             receivedInit: false,
             capabilities: new Set(),
             claudeCodeVersion: undefined,
+            outputStyle: undefined,
             permissionMode: queryOptions.permissionMode,
             stopping: false,
             exitCause: undefined,
@@ -13328,6 +13348,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.receivedInit = true;
                     context.capabilities = new Set(message.capabilities ?? []);
                     context.claudeCodeVersion = message.claude_code_version;
+                    context.outputStyle = message.output_style?.trim() || undefined;
                   }
                   if (
                     message.type === "system" &&
@@ -13595,6 +13616,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               compactionFailure: null,
               nativeSessionTitle: null,
               steeredSegmentUsage: [],
+              steeredApiDurationMs: 0,
               steersClosed: false,
               steeredLedgerUsage: { inputTokens: 0, outputTokens: 0 },
               rootModels: new Set(),

@@ -480,6 +480,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     themeHalves,
   } = useTheme();
   const settings = useScopedSettings();
+  const { scope, targets } = useSettingsScope();
   const updateSettings = useUpdateScopedSettings();
 
   const isTextGenerationModelDirty = !Equal.equals(
@@ -642,6 +643,32 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.statusLineEnabled !== DEFAULT_UNIFIED_SETTINGS.statusLineEnabled
       ? ["Status line"]
       : []),
+    ...((scope.kind === "all" || scope.kind === "environment") &&
+    targets.some(
+      ({ settings }) =>
+        settings.statusLineHideSessionLimit !== DEFAULT_UNIFIED_SETTINGS.statusLineHideSessionLimit,
+    )
+      ? [gt("Hide 5-hour limit")]
+      : []),
+    ...(settings.statusLineShowSessionDepletionRatio !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio
+      ? [gt("5-hour depletion ratio")]
+      : []),
+    ...(settings.statusLineShowWeeklyDepletionRatio !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio
+      ? [gt("Weekly depletion ratio")]
+      : []),
+    ...(settings.statusLineUseApiPrice !== DEFAULT_UNIFIED_SETTINGS.statusLineUseApiPrice
+      ? [gt("Use API prices for thread cost")]
+      : []),
+    ...(settings.statusLineSessionBurnTauMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes
+      ? [gt("5-hour burn-rate smoothing")]
+      : []),
+    ...(settings.statusLineWeeklyBurnTauMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes
+      ? [gt("Weekly burn-rate smoothing")]
+      : []),
     ...(settings.statusLineCommand !== DEFAULT_UNIFIED_SETTINGS.statusLineCommand
       ? ["Status line command"]
       : []),
@@ -784,6 +811,14 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       statusLineEnabled: DEFAULT_UNIFIED_SETTINGS.statusLineEnabled,
+      statusLineHideSessionLimit: DEFAULT_UNIFIED_SETTINGS.statusLineHideSessionLimit,
+      statusLineShowSessionDepletionRatio:
+        DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio,
+      statusLineShowWeeklyDepletionRatio:
+        DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio,
+      statusLineUseApiPrice: DEFAULT_UNIFIED_SETTINGS.statusLineUseApiPrice,
+      statusLineSessionBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes,
+      statusLineWeeklyBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes,
       statusLineCommand: DEFAULT_UNIFIED_SETTINGS.statusLineCommand,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmTerminalClose: DEFAULT_UNIFIED_SETTINGS.confirmTerminalClose,

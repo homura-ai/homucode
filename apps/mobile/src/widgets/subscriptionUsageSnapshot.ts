@@ -3,6 +3,7 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   remainingPercent,
+  usageWindowForForecast,
   type LimitAccount,
   type LimitPoolWindow,
   type LimitPresentations,
@@ -22,6 +23,7 @@ export interface SubscriptionUsageText {
   refresh: string;
   noSessionLimit: string;
   noWeeklyLimit: string;
+  resetUnavailable?: string;
   subscriptionRemaining: string;
   percentLeft: string;
   windowPercentLeft: string;
@@ -112,7 +114,11 @@ function clockLabel(at: number, from: number) {
   );
 }
 
-function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): WidgetLimitAccount[] {
+function widgetAccounts(
+  window: LimitPoolWindow,
+  now: number,
+  resolve: MessageResolver,
+): WidgetLimitAccount[] {
   const seen = new Map<string, number>();
   return window.columns.map((column) => {
     // Redacted initials can collide, and the widget keys segments by name.
@@ -123,8 +129,10 @@ function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): Widg
     // expo-widgets cannot convert an explicit undefined into a Kotlin value.
     const account = { name: count > 1 ? `${base}${count}` : base, ...(color && { color }) };
     if (column.window === null) return account;
-    const checkedAt = Date.parse(column.account.limits.checkedAt);
-    const resetsAt = column.window.resetsAt ? Date.parse(column.window.resetsAt) : NaN;
+    const { driver, limits } = column.account;
+    const forecast = usageWindowForForecast(column.window, driver, limits.checkedAt, now);
+    const checkedAt = Date.parse(limits.checkedAt);
+    const resetsAt = forecast.resetsAt ? Date.parse(forecast.resetsAt) : NaN;
     // A reset at or before the observation already happened.
     const reset = resetsAt > checkedAt;
     return {
@@ -135,8 +143,8 @@ function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): Widg
         resetsAt,
         reset: clockLabel(resetsAt, checkedAt),
       }),
-      ...(column.window.windowDurationMins && {
-        durationMs: column.window.windowDurationMins * 60_000,
+      ...(forecast.windowDurationMins && {
+        durationMs: forecast.windowDurationMins * 60_000,
       }),
     };
   });
@@ -146,6 +154,19 @@ function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): Widg
 const isUpcoming = (reset: LimitPoolWindow["resets"][number]) =>
   reset.at > Date.parse(reset.member.account.limits.checkedAt);
 
+function expiryDeadline(reset: LimitPoolWindow["resets"][number]): number[] {
+  if (!isUpcoming(reset)) return [];
+  const { account, window } = reset.member;
+  if (window.kind === "weekly") return [];
+  if (window.kind !== "session") return [reset.at];
+  // An exhausted weekly quota can lend its reset clock to the session row.
+  const reported = account.limits.windows.find(
+    (candidate) => candidate.kind === "session" && candidate.id === window.id,
+  );
+  const sessionReset = Date.parse(reported?.resetsAt ?? "");
+  return sessionReset >= reset.at ? [sessionReset] : [];
+}
+
 const resetTime = (at: number) =>
   new Date(at).toLocaleString(undefined, {
     month: "short",
@@ -153,6 +174,40 @@ const resetTime = (at: number) =>
     hour: "numeric",
     minute: "2-digit",
   });
+
+function widgetWindows(window: LimitPoolWindow, now: number, resolve: MessageResolver) {
+  const accounts = widgetAccounts(window, now, resolve);
+  const resetUnavailable = resolve(msg("Reset time unavailable"));
+  if (window.remainingPercent === null) {
+    return accounts.flatMap((account) =>
+      account.remaining === undefined
+        ? []
+        : [
+            {
+              kind: window.kind,
+              label: `${window.label} · ${account.name}`,
+              remaining: account.remaining,
+              reset: account.reset ?? resetUnavailable,
+              accounts: [account],
+            },
+          ],
+    );
+  }
+  const next = window.resets[0];
+  return [
+    {
+      kind: window.kind,
+      label: window.label,
+      remaining: window.remainingPercent,
+      reset: next
+        ? isUpcoming(next)
+          ? resolve(msg("Next reset {time}", { time: resetTime(next.at) }))
+          : resolve(msg("Reset {time}", { time: resetTime(next.at) }))
+        : resetUnavailable,
+      accounts,
+    },
+  ];
+}
 
 function subscriptionUsageText(
   resolve: MessageResolver,
@@ -162,6 +217,7 @@ function subscriptionUsageText(
     refresh: resolve(msg("Open {app} to refresh", { app: "Homu" })),
     noSessionLimit: resolve(msg("No session limit reported")),
     noWeeklyLimit: resolve(msg("No weekly limit reported")),
+    resetUnavailable: resolve(msg("Reset time unavailable")),
     subscriptionRemaining: resolve(msg("Subscription remaining")),
     percentLeft: resolve(msg("{remaining}% left", { remaining: "{remaining}" })),
     windowPercentLeft: resolve(
@@ -234,16 +290,25 @@ function subscriptionUsageProps(
             totalWindows: 0,
           };
         const checkedAt = Math.min(...pool.accounts.map((a) => Date.parse(a.limits.checkedAt)));
+        // A blocked session can lose its display clock without extending the observation's lifetime.
+        const expiryWindows =
+          now > checkedAt &&
+          pool.windows.some(
+            ({ kind, members }) =>
+              kind === "session" && members.some(({ window }) => window.resetsAt === undefined),
+          )
+            ? (collectLimitPools(pool.accounts, checkedAt)[0]?.windows ?? pool.windows)
+            : pool.windows;
         const expiresAt = Math.min(
           checkedAt + SNAPSHOT_MAX_AGE,
-          ...pool.windows.flatMap((window) =>
-            window.resets.filter(isUpcoming).map((reset) => reset.at),
-          ),
+          ...expiryWindows.flatMap((window) => window.resets.flatMap(expiryDeadline)),
         );
         const fresh = Number.isFinite(expiresAt) && expiresAt > now;
-        const sortedWindows = [...pool.windows].sort(
-          (a, b) => a.remainingPercent - b.remainingPercent,
-        );
+        const sortedWindows = fresh
+          ? pool.windows
+              .flatMap((window) => widgetWindows(window, now, resolve))
+              .sort((a, b) => a.remaining - b.remaining)
+          : [];
         const selectedWindows = [
           ...new Set([
             sortedWindows.find((window) => window.kind === "session"),
@@ -253,13 +318,14 @@ function subscriptionUsageProps(
         ]
           .filter((window) => window !== undefined)
           .slice(0, maxWindowsPerProvider)
-          .sort((a, b) => a.remainingPercent - b.remainingPercent);
+          .sort((a, b) => a.remaining - b.remaining);
         return {
           name,
           colors,
           detail: !fresh
             ? resolve(msg("Open {app} to refresh", { app: "Homu" }))
-            : pool.accounts.length > 1
+            : pool.accounts.length > 1 &&
+                pool.windows.every((window) => window.remainingPercent !== null)
               ? resolve(
                   msg(
                     "{count, plural, one {{count} account · pooled} other {{count} accounts · pooled}}",
@@ -270,20 +336,8 @@ function subscriptionUsageProps(
                 )
               : resolve(msg("Subscription remaining")),
           expiresAt: fresh ? expiresAt : 0,
-          totalWindows: fresh ? pool.windows.length : 0,
-          windows: fresh
-            ? selectedWindows.map((window) => ({
-                kind: window.kind,
-                label: window.label,
-                remaining: Math.round(window.remainingPercent),
-                reset: window.resets[0]
-                  ? isUpcoming(window.resets[0])
-                    ? resolve(msg("Next reset {time}", { time: resetTime(window.resets[0].at) }))
-                    : resolve(msg("Reset {time}", { time: resetTime(window.resets[0].at) }))
-                  : resolve(msg("Reset time unavailable")),
-                accounts: widgetAccounts(window, resolve),
-              }))
-            : [],
+          totalWindows: sortedWindows.length,
+          windows: selectedWindows,
         };
       }),
   };
@@ -292,6 +346,7 @@ function subscriptionUsageProps(
 export function buildSubscriptionUsageSnapshot(
   presentations: LimitPresentations,
   url: string,
+  now: number,
   maxWindowsPerProvider = 6,
   resolve: MessageResolver = m,
 ): SubscriptionUsageSnapshot {
@@ -310,7 +365,7 @@ export function buildSubscriptionUsageSnapshot(
   );
   const props = subscriptionUsageProps(
     collectLimitAccounts(presentations),
-    0,
+    now,
     configuredDrivers,
     maxWindowsPerProvider,
     resolve,
@@ -326,11 +381,42 @@ export function buildSubscriptionUsageSnapshot(
   };
 }
 
+type WidgetWindow = SubscriptionUsageSnapshot["providers"][number]["windows"][number];
+
+function windowAt(window: WidgetWindow, date: number, resetUnavailable: string) {
+  if (!window.accounts?.some(({ resetsAt }) => resetsAt !== undefined && resetsAt <= date)) {
+    return window;
+  }
+  const accounts = window.accounts.map((account) => {
+    const { resetsAt, reset: _reset, durationMs: _durationMs, ...observed } = account;
+    return resetsAt !== undefined && resetsAt <= date ? { ...observed, refill: 0 } : account;
+  });
+  const next = accounts.reduce<WidgetLimitAccount | undefined>(
+    (earliest, account) =>
+      account.resetsAt !== undefined && account.resetsAt < (earliest?.resetsAt ?? Infinity)
+        ? account
+        : earliest,
+    undefined,
+  );
+  return { ...window, reset: next?.reset ?? resetUnavailable, accounts };
+}
+
+export function subscriptionUsageDeadlines(snapshot: SubscriptionUsageSnapshot, now: number) {
+  const deadlines = new Set<number>();
+  for (const provider of snapshot.providers) {
+    deadlines.add(provider.expiresAt);
+    for (const window of provider.windows) {
+      for (const { resetsAt } of window.accounts ?? []) {
+        if (resetsAt !== undefined && resetsAt < provider.expiresAt) deadlines.add(resetsAt);
+      }
+    }
+  }
+  return [...deadlines].filter((deadline) => deadline > now).sort((a, b) => a - b);
+}
+
 export function subscriptionUsageTimeline(snapshot: SubscriptionUsageSnapshot, now: number) {
-  const deadlines = [...new Set(snapshot.providers.map((p) => p.expiresAt))]
-    .filter((deadline) => deadline > now)
-    .sort((a, b) => a - b);
-  return [now, ...deadlines].map((date) => ({
+  const resetUnavailable = snapshot.text?.resetUnavailable ?? m(msg("Reset time unavailable"));
+  return [now, ...subscriptionUsageDeadlines(snapshot, now)].map((date) => ({
     date: new Date(date),
     props: {
       ...snapshot,
@@ -342,7 +428,10 @@ export function subscriptionUsageTimeline(snapshot: SubscriptionUsageSnapshot, n
               windows: [],
               totalWindows: 0,
             }
-          : provider,
+          : {
+              ...provider,
+              windows: provider.windows.map((window) => windowAt(window, date, resetUnavailable)),
+            },
       ),
     },
   }));

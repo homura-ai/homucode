@@ -112,6 +112,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   // Runs the command Settings chose; the caller only supplies its stdin.
   [WS_METHODS.serverRenderStatusLine]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetStatusLineAccounting]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthDiagnosticsReadScope,
   // Thread load balancing reads host load, so it needs thread scope rather than diagnostics scope.

@@ -3,6 +3,7 @@ import { Pressable, View } from "react-native";
 
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { AppActivityIndicator } from "./AppActivityIndicator";
+import { renderAppBarTitle } from "./AppBarTitle";
 import { AppText } from "./AppText";
 import { SymbolView } from "./AppSymbol";
 import { IconButton } from "./IconButton";
@@ -55,10 +56,22 @@ function NativeSheetHeader(props: SheetHeaderProps) {
   return (
     <>
       <NativeStackScreenOptions
+        optionsVersion={[props.titleAccessory, props.subtitle]}
         options={{
           title: props.title,
           headerBackVisible: false,
-          unstable_headerSubtitle: props.subtitle,
+          unstable_headerSubtitle: props.titleAccessory ? undefined : props.subtitle,
+          ...(props.titleAccessory === undefined
+            ? {}
+            : {
+                headerTitle: props.titleAccessory
+                  ? renderAppBarTitle({
+                      title: props.title,
+                      subtitle: props.subtitle,
+                      accessory: props.titleAccessory,
+                    })
+                  : undefined,
+              }),
         }}
       />
       <Toolbar placement="left">

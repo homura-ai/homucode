@@ -30,6 +30,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ModelManifest from "./ModelManifest.ts";
 import { applyProviderCompatibility } from "./providerCompatibility.ts";
+import * as UsageBurnRate from "../statusLine/UsageBurnRate.ts";
 import * as ServerConfig from "../config.ts";
 import { refreshWindowsPath } from "../os-jank.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
@@ -454,6 +455,8 @@ export const layer = Layer.effect(
       PubSub.shutdown,
     );
 
+    const burnRate = yield* UsageBurnRate.UsageBurnRate;
+
     const bootInstances = yield* instanceRegistry.listInstances;
     const bootSources = bootInstances.map(buildSnapshotSource);
     const fallbackProviders = yield* loadProviders(bootSources);
@@ -600,7 +603,29 @@ export const layer = Layer.effect(
       const manifest = yield* manifestService.current;
       const nextProvidersWithUpdateState = yield* Effect.forEach(
         nextProviders,
-        applyProviderUpdateState,
+        (provider) =>
+          provider.usageLimits === undefined
+            ? applyProviderUpdateState(provider)
+            : burnRate
+                .record(
+                  [
+                    "native",
+                    provider.driver,
+                    provider.instanceId,
+                    provider.auth.type,
+                    provider.auth.email,
+                    provider.auth.profileId,
+                    provider.auth.workspaceId,
+                    provider.usageLimits.credentialFingerprint,
+                  ],
+                  provider.usageLimits,
+                )
+                .pipe(
+                  Effect.flatMap((usageLimits) =>
+                    applyProviderUpdateState({ ...provider, usageLimits }),
+                  ),
+                ),
+
         {
           concurrency: "unbounded",
         },

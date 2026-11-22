@@ -148,20 +148,45 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Status line
 
-Enable **Settings → HomuCode → Agent behavior → Status line** to show the thread's status in the top bar beside
-its title. Three dials show what runs out: context use, the 5-hour limit and the weekly
-limit, each with the percentage used inside. Beside them are the model, its effort as
-signal bars, and small icons for uptime, cache hits and tokens in and out. When the top
-bar is short of room, the small icons go first, then the captions beside the dials.
-The clock stays at the right of the thread header, even when the status line is off.
-Hover the status line, or focus it with the keyboard, to see every value by name,
-with the folder and version. The expanded view also lists models and their reported limits
-for the thread's environment. To hide that list, turn off **Show all models in status line
-details** under **Settings → HomuCode → Agent behavior → Extra features**.
+Enable **Status line** under **Settings → Agent behavior** on desktop and web, or
+**Settings → HomuCode** on mobile. The context dial shows the percentage used and the
+token count. The 5-hour and weekly dials show the percentage remaining. A tick marks
+the projected remainder at reset. In a narrow bar, labels shorten and the weekly limit
+stays visible longer than the 5-hour limit. The 5-hour dial appears when your provider
+reports that limit. Turn on **Hide 5-hour limit** in the same settings to always hide it.
+On desktop and web, the model picker colors the reasoning effort. On mobile, the status
+line colors the model and effort together. As space gets tight, it shortens the model
+name while keeping its version, such as `A6.2 hi`.
 
-For providers routed through a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub),
-the status line shows the hub's pooled usage. Each percentage uses the accounts that
-reported a current reading for that window, and the countdown shows the next reported reset.
+Thread cost covers recorded main-agent usage in the active provider thread. It uses the
+API price and estimates a subscription share for supported plans. Claude Ultra estimates
+use 3.2% for non-Fable models and 5.7% for Fable. Turn on **Use API prices for thread cost**
+to always see API prices. A ≥ means some turns could only be partially priced or had no
+pricing data. Claude also reports API time and output style on completed turns.
+
+The projected remainder, depletion ratio, and quota dial and countdown colors all use
+the recent smoothed burn rate. Green means low risk, yellow means the quota is on pace
+to run out at reset, and the color moves toward red as exhaustion approaches. Hover or
+focus the status line on desktop and web, or tap it on mobile, to see the details and change
+**5-hour burn-rate smoothing** or **Weekly burn-rate smoothing**. The same controls are
+in Settings. Longer durations make the colors less sensitive to recent usage. The
+defaults are 30 minutes and one day.
+
+For a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub), the percentages pool
+the latest account readings, and the countdown shows the next reset.
+Pooled weekly Codex and Claude quotas use monthly subscription prices as relative weights
+when each account's tier and price are known. If a multi-account weekly quota cannot be
+combined, the weekly dial is hidden and individual readings are available in **Settings → Usage**
+and in **All models** on desktop and web.
+Turn on **5-hour depletion ratio** and **Weekly depletion ratio** independently in Settings
+to show each percentage beside its dial label. The ratio estimates how much of the
+remaining quota you will use before reset. Above 100% means you are on pace to run out
+first. A negative projected remainder shows how far past the limit that pace would take
+you. Projections and ratios appear once a recent burn-rate estimate is available.
+
+On desktop and web, **All models** shows the environment's provider quotas. Turn on
+**Show model names** in the section to see each provider's model list. Both preferences
+are available under **Settings → HomuCode → Agent behavior → Extra features**.
 
 To draw your own, set **Status line command** to any shell command: it receives Claude
 Code's status line JSON on stdin and runs in the thread's folder, so a script written for
@@ -170,9 +195,9 @@ place of the dials. Colors take the matching colors of your theme, percentages a
 as bars, and when room is short the version, `user@host` and the directory are left out
 first.
 
-On mobile the status line is a line of text under the composer: your command's output, or
-without one the [01-1/statusline](https://github.com/01-1/statusline) script on the thread's
-machine, which needs `bash` and `jq`.
+On mobile, the status line sits beside the title when there is room and appears as a compact
+button beneath the top bar on narrower screens. Tap it for the full details. A custom
+command displays its text in the same place, with the full output available on tap.
 
 ## Quote an assistant response
 

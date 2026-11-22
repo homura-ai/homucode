@@ -192,7 +192,6 @@ export interface ThreadComposerProps {
   readonly canSwitchProvider: boolean;
   readonly onHeightChange?: (height: number) => void;
   /** Drawn under the composer, inside the measured height. */
-  readonly statusBar?: ReactNode;
   readonly onEditorFocusChange?: (focused: boolean) => void;
 }
 
@@ -1144,7 +1143,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             <T>This connection cannot control this task. You can still edit your draft.</T>
           </Text>
         ) : null}
-        {props.statusBar}
       </Animated.View>
 
       <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />

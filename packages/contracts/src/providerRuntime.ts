@@ -58,6 +58,8 @@ const TurnTokenUsageCommonFields = {
   usageScope: Schema.Literal("main_agent"),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   cacheCreationTokens: Schema.optional(NonNegativeInt),
+  // The part of cacheCreationTokens written with Claude's one-hour TTL, which costs more.
+  cacheCreation1hTokens: Schema.optional(NonNegativeInt),
   reasoningTokens: Schema.optional(NonNegativeInt),
   hasSubagents: Schema.Boolean,
   // Native model ids the provider reported for the main agent's work. Absent means unknown.

@@ -16,6 +16,7 @@ import { LocalThreadsUseDefaultBranchRow, QuickModelRow } from "./ProjectDefault
 import { ScopedSwitch } from "./ScopedSwitch";
 import { ScratchEnvironmentSettings } from "./ScratchEnvironmentSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { StatusLineBurnTauControl } from "./StatusLineBurnTauControl";
 import { StagedBuildSettingsRow } from "./StagedBuildSettingsRow";
 import {
   SettingsPageContainer,
@@ -249,9 +250,14 @@ function AgentBehaviorSettings() {
   const gt = useGT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const mixedSessionBurnTau = useScopedSettingsMixed(["statusLineSessionBurnTauMinutes"]);
+  const mixedWeeklyBurnTau = useScopedSettingsMixed(["statusLineWeeklyBurnTauMinutes"]);
   const mixedStatusLineCommand = useScopedSettingsMixed(["statusLineCommand"]);
   const mixedProjectName = useScopedSettingsMixed(["threadTitleIncludeProjectName"]);
   const mixedIdPrefix = useScopedSettingsMixed(["threadTitleIdPrefix"]);
+  const depletionRatioDescription = gt(
+    "Show the time until reset as a percentage of the time until quota is projected to run out.",
+  );
 
   return (
     <>
@@ -397,7 +403,7 @@ function AgentBehaviorSettings() {
           serverScoped
           settingKeys={["statusLineEnabled"]}
           {...searchableSetting("status-line")}
-          description={gt("Show the model, context, and usage limits in the top bar.")}
+          description={gt("Show context, usage limits, and thread cost in the top bar.")}
           resetAction={
             settings.statusLineEnabled !== DEFAULT_UNIFIED_SETTINGS.statusLineEnabled ? (
               <SettingResetButton
@@ -414,6 +420,87 @@ function AgentBehaviorSettings() {
               checked={settings.statusLineEnabled}
               onCheckedChange={(checked) => updateSettings({ statusLineEnabled: Boolean(checked) })}
               aria-label={gt("Show the status line")}
+            />
+          }
+        />
+        {(
+          [
+            [
+              "statusLineHideSessionLimit",
+              "status-line-hide-session-limit",
+              gt("Hide 5-hour limit"),
+              gt("When off, show the 5-hour limit when it is available."),
+            ],
+            [
+              "statusLineShowSessionDepletionRatio",
+              "status-line-session-depletion-ratio",
+              gt("5-hour depletion ratio"),
+              depletionRatioDescription,
+            ],
+            [
+              "statusLineShowWeeklyDepletionRatio",
+              "status-line-weekly-depletion-ratio",
+              gt("Weekly depletion ratio"),
+              depletionRatioDescription,
+            ],
+          ] as const
+        ).map(([setting, searchId, label, description]) => (
+          <SettingsRow
+            key={setting}
+            serverScoped
+            settingKeys={[setting]}
+            {...searchableSetting(searchId)}
+            description={description}
+            control={
+              <ScopedSwitch
+                settingKeys={[setting]}
+                checked={settings[setting]}
+                onCheckedChange={(checked) => updateSettings({ [setting]: Boolean(checked) })}
+                aria-label={label}
+              />
+            }
+          />
+        ))}
+        <SettingsRow
+          serverScoped
+          settingKeys={["statusLineUseApiPrice"]}
+          {...searchableSetting("status-line-use-api-price")}
+          description={gt("Use API list prices instead of estimating the subscription cost.")}
+          control={
+            <ScopedSwitch
+              settingKeys={["statusLineUseApiPrice"]}
+              checked={settings.statusLineUseApiPrice}
+              onCheckedChange={(checked) =>
+                updateSettings({ statusLineUseApiPrice: Boolean(checked) })
+              }
+              aria-label={gt("Use API prices for thread cost")}
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["statusLineSessionBurnTauMinutes"]}
+          {...searchableSetting("status-line-session-burn-rate")}
+          description={gt(
+            "A longer duration makes countdown colors less sensitive to recent usage.",
+          )}
+          control={
+            <StatusLineBurnTauControl
+              setting="statusLineSessionBurnTauMinutes"
+              value={mixedSessionBurnTau ? null : settings.statusLineSessionBurnTauMinutes}
+              onChange={(value) => updateSettings({ statusLineSessionBurnTauMinutes: value })}
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["statusLineWeeklyBurnTauMinutes"]}
+          {...searchableSetting("status-line-weekly-burn-rate")}
+          control={
+            <StatusLineBurnTauControl
+              setting="statusLineWeeklyBurnTauMinutes"
+              value={mixedWeeklyBurnTau ? null : settings.statusLineWeeklyBurnTauMinutes}
+              onChange={(value) => updateSettings({ statusLineWeeklyBurnTauMinutes: value })}
             />
           }
         />
