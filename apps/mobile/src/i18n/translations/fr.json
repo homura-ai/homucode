@@ -5727,5 +5727,7 @@
   "0c7fe13aad847def": "Lissage du rythme de consommation sur 5 heures",
   "2a2f6e74a1470e75": "Lissage du rythme de consommation hebdomadaire",
   "ae42b8cb5e9b6b77": "Personnalisé",
-  "7c0a99ef2b199776": "{setting} en minutes"
+  "7c0a99ef2b199776": "{setting} en minutes",
+  "e51d29772437f258": "Masquer la limite de 5 heures",
+  "5eb58c56d8e9bb88": "Si cette option est désactivée, la limite de 5 heures s’affiche lorsqu’elle est disponible."
 }

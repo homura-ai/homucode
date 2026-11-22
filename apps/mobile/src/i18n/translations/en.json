@@ -5734,5 +5734,7 @@
   "0c7fe13aad847def": "5-hour burn-rate smoothing",
   "2a2f6e74a1470e75": "Weekly burn-rate smoothing",
   "ae42b8cb5e9b6b77": "Custom",
-  "7c0a99ef2b199776": "{setting} in minutes"
+  "7c0a99ef2b199776": "{setting} in minutes",
+  "e51d29772437f258": "Hide 5-hour limit",
+  "5eb58c56d8e9bb88": "When off, show the 5-hour limit when it is available."
 }

@@ -945,6 +945,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["all models statusline quota usage extra features"],
   },
   {
+    id: "status-line-hide-session-limit",
+    title: msg("Hide 5-hour limit"),
+    to: "/settings/agent-behavior",
+    scope: "environment-defaults",
+    searchTerms: ["statusline 5h five hour session quota usage"],
+  },
+  {
     id: "status-line-session-depletion-ratio",
     title: msg("5-hour depletion ratio"),
     to: "/settings/agent-behavior",

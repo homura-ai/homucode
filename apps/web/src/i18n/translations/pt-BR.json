@@ -12771,5 +12771,7 @@
   "0c7fe13aad847def": "Suavização do ritmo de consumo de 5 horas",
   "2a2f6e74a1470e75": "Suavização do ritmo de consumo semanal",
   "ae42b8cb5e9b6b77": "Personalizado",
-  "7c0a99ef2b199776": "{setting} em minutos"
+  "7c0a99ef2b199776": "{setting} em minutos",
+  "e51d29772437f258": "Ocultar o limite de 5 horas",
+  "5eb58c56d8e9bb88": "Quando desativada, esta opção mostra o limite de 5 horas quando ele estiver disponível."
 }

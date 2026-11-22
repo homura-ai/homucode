@@ -181,6 +181,9 @@ function HomuCodeServerSettings() {
   };
 
   if (targets.length === 0) return null;
+  const depletionRatioDescription = gt(
+    "Show the time until reset as a percentage of the time until quota is projected to run out.",
+  );
   return (
     <>
       <SettingsSection title={gt("Status line")}>
@@ -198,17 +201,28 @@ function HomuCodeServerSettings() {
         />
         {(
           [
-            ["statusLineShowSessionDepletionRatio", gt("5-hour depletion ratio")],
-            ["statusLineShowWeeklyDepletionRatio", gt("Weekly depletion ratio")],
+            [
+              "statusLineHideSessionLimit",
+              gt("Hide 5-hour limit"),
+              gt("When off, show the 5-hour limit when it is available."),
+            ],
+            [
+              "statusLineShowSessionDepletionRatio",
+              gt("5-hour depletion ratio"),
+              depletionRatioDescription,
+            ],
+            [
+              "statusLineShowWeeklyDepletionRatio",
+              gt("Weekly depletion ratio"),
+              depletionRatioDescription,
+            ],
           ] as const
-        ).map(([setting, label]) => (
+        ).map(([setting, label, description]) => (
           <SettingsSwitchRow
             key={setting}
             icon="timer"
             label={label}
-            subtitle={gt(
-              "Show the time until reset as a percentage of the time until quota is projected to run out.",
-            )}
+            subtitle={description}
             value={uniformMobileSetting(targets, setting)}
             disabled={
               !canWrite ||

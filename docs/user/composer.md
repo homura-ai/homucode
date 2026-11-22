@@ -148,11 +148,12 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Status line
 
-Enable **Settings → HomuCode → Agent behavior → Status line** to show context use and quota
-in the top bar. The context dial shows the percentage used and the token count. The 5-hour
-and weekly dials show the percentage remaining. A tick marks the projected remainder at
-reset. In a narrow bar, labels shorten and the weekly limit stays visible longer than the
-5-hour limit.
+Enable **Status line** under **Settings → Agent behavior** on desktop and web, or
+**Settings → HomuCode** on mobile. The context dial shows the percentage used and the
+token count. The 5-hour and weekly dials show the percentage remaining. A tick marks
+the projected remainder at reset. In a narrow bar, labels shorten and the weekly limit
+stays visible longer than the 5-hour limit. The 5-hour dial appears when your provider
+reports that limit. Turn on **Hide 5-hour limit** in the same settings to always hide it.
 On desktop and web, the model picker colors the reasoning effort. On mobile, the status
 line colors the model and effort together. As space gets tight, it shortens the model
 name while keeping its version, such as `A6.2 hi`.

@@ -480,6 +480,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     themeHalves,
   } = useTheme();
   const settings = useScopedSettings();
+  const { scope, targets } = useSettingsScope();
   const updateSettings = useUpdateScopedSettings();
 
   const isTextGenerationModelDirty = !Equal.equals(
@@ -642,6 +643,13 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.statusLineEnabled !== DEFAULT_UNIFIED_SETTINGS.statusLineEnabled
       ? ["Status line"]
       : []),
+    ...((scope.kind === "all" || scope.kind === "environment") &&
+    targets.some(
+      ({ settings }) =>
+        settings.statusLineHideSessionLimit !== DEFAULT_UNIFIED_SETTINGS.statusLineHideSessionLimit,
+    )
+      ? [gt("Hide 5-hour limit")]
+      : []),
     ...(settings.statusLineShowSessionDepletionRatio !==
     DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio
       ? [gt("5-hour depletion ratio")]
@@ -803,6 +811,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       statusLineEnabled: DEFAULT_UNIFIED_SETTINGS.statusLineEnabled,
+      statusLineHideSessionLimit: DEFAULT_UNIFIED_SETTINGS.statusLineHideSessionLimit,
       statusLineShowSessionDepletionRatio:
         DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio,
       statusLineShowWeeklyDepletionRatio:

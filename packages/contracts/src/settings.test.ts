@@ -632,6 +632,7 @@ it("decodes setup behavior defaults without opting into optional features", () =
     buildOutputFolder: "",
     buildAppImageFolder: "",
     statusLineEnabled: false,
+    statusLineHideSessionLimit: false,
     threadTitleIncludeProjectName: true,
     threadTitleIdPrefix: false,
   });

@@ -255,6 +255,9 @@ function AgentBehaviorSettings() {
   const mixedStatusLineCommand = useScopedSettingsMixed(["statusLineCommand"]);
   const mixedProjectName = useScopedSettingsMixed(["threadTitleIncludeProjectName"]);
   const mixedIdPrefix = useScopedSettingsMixed(["threadTitleIdPrefix"]);
+  const depletionRatioDescription = gt(
+    "Show the time until reset as a percentage of the time until quota is projected to run out.",
+  );
 
   return (
     <>
@@ -423,25 +426,31 @@ function AgentBehaviorSettings() {
         {(
           [
             [
+              "statusLineHideSessionLimit",
+              "status-line-hide-session-limit",
+              gt("Hide 5-hour limit"),
+              gt("When off, show the 5-hour limit when it is available."),
+            ],
+            [
               "statusLineShowSessionDepletionRatio",
               "status-line-session-depletion-ratio",
               gt("5-hour depletion ratio"),
+              depletionRatioDescription,
             ],
             [
               "statusLineShowWeeklyDepletionRatio",
               "status-line-weekly-depletion-ratio",
               gt("Weekly depletion ratio"),
+              depletionRatioDescription,
             ],
           ] as const
-        ).map(([setting, searchId, label]) => (
+        ).map(([setting, searchId, label, description]) => (
           <SettingsRow
             key={setting}
             serverScoped
             settingKeys={[setting]}
             {...searchableSetting(searchId)}
-            description={gt(
-              "Show the time until reset as a percentage of the time until quota is projected to run out.",
-            )}
+            description={description}
             control={
               <ScopedSwitch
                 settingKeys={[setting]}

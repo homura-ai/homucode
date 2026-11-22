@@ -5733,5 +5733,7 @@
   "0c7fe13aad847def": "Glättung der 5‑Stunden-Verbrauchsrate",
   "2a2f6e74a1470e75": "Glättung der wöchentlichen Verbrauchsrate",
   "ae42b8cb5e9b6b77": "Benutzerdefiniert",
-  "7c0a99ef2b199776": "{setting} in Minuten"
+  "7c0a99ef2b199776": "{setting} in Minuten",
+  "e51d29772437f258": "5-Stunden-Limit ausblenden",
+  "5eb58c56d8e9bb88": "Wenn die Option deaktiviert ist, wird das 5-Stunden-Limit angezeigt, sofern es verfügbar ist."
 }

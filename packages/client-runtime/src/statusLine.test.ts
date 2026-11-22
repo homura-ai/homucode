@@ -973,6 +973,30 @@ describe("buildStatusLineInput", () => {
       outputTokens: 21_400,
     });
   });
+
+  it("shows 5-hour usage only when it is reported and the dial is allowed", () => {
+    const provider = source.providers[0]!;
+    const limits = provider.usageLimits!;
+    const weeklyOnly = {
+      ...source,
+      providers: [
+        {
+          ...provider,
+          usageLimits: {
+            ...limits,
+            windows: limits.windows.filter(({ kind }) => kind === "weekly"),
+          },
+        },
+      ],
+    };
+    const defaults = buildStatusLineStats(source);
+    expect(defaults.fiveHour).toMatchObject({ remainingPercent: 53 });
+    expect(buildStatusLineStats(weeklyOnly)).toEqual({ ...defaults, fiveHour: null });
+
+    const hidden = { ...source, hideSessionLimit: true, showSessionDepletionRatio: true };
+    expect(buildStatusLineStats(hidden)).toEqual({ ...defaults, fiveHour: null });
+    expect(buildStatusLineInput(hidden)).toEqual(buildStatusLineInput(source));
+  });
 });
 
 describe("formatStatusLineTokens", () => {

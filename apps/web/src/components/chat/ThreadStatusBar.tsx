@@ -362,6 +362,10 @@ export function ThreadStatusLineRunner(props: {
     serverEnvironment.configValueAtom(environmentId),
     (config) => (config?.settings.statusLineCommand ?? "") !== "",
   );
+  const hideSessionLimit = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.settings.statusLineHideSessionLimit === true,
+  );
   const showSessionDepletionRatio = useAtomValue(
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.settings.statusLineShowSessionDepletionRatio === true,
@@ -392,6 +396,7 @@ export function ThreadStatusLineRunner(props: {
   const source = {
     ...props.source,
     nowMs: useNowMinuteMs(),
+    hideSessionLimit,
     showSessionDepletionRatio,
     showWeeklyDepletionRatio,
     accounting,

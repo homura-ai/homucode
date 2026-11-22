@@ -1749,6 +1749,9 @@ export const ServerSettings = Schema.Struct({
   ghqCloneLayout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Shows a line in the top bar, like Claude Code's status line. */
   statusLineEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  statusLineHideSessionLimit: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   statusLineShowSessionDepletionRatio: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -2238,6 +2241,7 @@ export const ServerSettingsPatch = Schema.Struct({
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   statusLineEnabled: Schema.optionalKey(Schema.Boolean),
+  statusLineHideSessionLimit: Schema.optionalKey(Schema.Boolean),
   statusLineShowSessionDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineShowWeeklyDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineUseApiPrice: Schema.optionalKey(Schema.Boolean),

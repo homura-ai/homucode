@@ -307,6 +307,7 @@ describe("SettingsServerControlsRouteScreen", () => {
 
     for (const [label, key] of [
       ["Status line", "statusLineEnabled"],
+      ["Hide 5-hour limit", "statusLineHideSessionLimit"],
       ["5-hour depletion ratio", "statusLineShowSessionDepletionRatio"],
       ["Weekly depletion ratio", "statusLineShowWeeklyDepletionRatio"],
       ["Use API prices for thread cost", "statusLineUseApiPrice"],
@@ -330,7 +331,7 @@ describe("SettingsServerControlsRouteScreen", () => {
     }
     mocks.readOnly.add("remote");
     act(() => root.render(<SettingsHomuCodeRouteScreen key="read-only" />));
-    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(6);
+    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(7);
   });
 
   it("sends a draft saved during a pending write once that write settles", async () => {
