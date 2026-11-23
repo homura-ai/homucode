@@ -182,6 +182,8 @@ function layerProjectionStore(
       getTurnItem: () => Effect.die("unused turn item read"),
       getMessagesById: () => Effect.die("unused getMessagesById"),
       getThreadRecords: () => Effect.die("unused record read"),
+      getRunningRunRecords: () => Effect.die("unused running run read"),
+      getMessageRunRecords: () => Effect.die("unused message run read"),
       getRuntimeRequest: () => Effect.die("unused getRuntimeRequest"),
       getRunningTurnContext: () => Effect.die("unused getRunningTurnContext"),
       getThreadProviderContext: () => Effect.die("unused getThreadProviderContext"),

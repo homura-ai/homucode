@@ -606,6 +606,15 @@ export interface ProjectionStoreV2Shape {
     fields: ReadonlyArray<K>,
     filter?: ProjectionRecordFilter,
   ) => Effect.Effect<ProjectionRecords<K>, ProjectionStoreV2Error>;
+  /** Running runs and their provider turns, from one snapshot. */
+  readonly getRunningRunRecords: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ProjectionRecords<"runs" | "providerTurns">, ProjectionStoreV2Error>;
+  /** A message, its run and that run's user-message items, from one snapshot. */
+  readonly getMessageRunRecords: (
+    threadId: ThreadId,
+    messageId: MessageId,
+  ) => Effect.Effect<ProjectionRecords<"runs" | "messages" | "turnItems">, ProjectionStoreV2Error>;
 
   readonly apply: (
     event: OrchestrationV2DomainEvent,
@@ -7028,6 +7037,45 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         sql.withTransaction(effect).pipe(Effect.mapError(controlReadError(threadId))),
     );
 
+    const getRunningRunRecords: ProjectionStoreV2Shape["getRunningRunRecords"] = Effect.fn(
+      "ProjectionStore.getRunningRunRecords",
+    )(
+      function* (threadId) {
+        const { thread, runs } = yield* getThreadRecords(threadId, ["runs"], {
+          runStatuses: ["running"],
+        });
+        const { providerTurns } = yield* getThreadRecords(threadId, ["providerTurns"], {
+          providerTurnAttemptIds: runs.flatMap((run) =>
+            run.activeAttemptId === null ? [] : [run.activeAttemptId],
+          ),
+        });
+        return { thread, runs, providerTurns };
+      },
+      (effect, threadId) =>
+        sql.withTransaction(effect).pipe(Effect.mapError(controlReadError(threadId))),
+    );
+
+    const getMessageRunRecords: ProjectionStoreV2Shape["getMessageRunRecords"] = Effect.fn(
+      "ProjectionStore.getMessageRunRecords",
+    )(
+      function* (threadId, messageId) {
+        const { thread, messages } = yield* getThreadRecords(threadId, ["messages"], {
+          messageIds: [messageId],
+        });
+        const runId = messages[0]?.runId ?? null;
+        if (runId === null) return { thread, messages, runs: [], turnItems: [] };
+        // `turnItemRunId` searches the (thread_id, run_id) index; a run id list does not.
+        const { runs, turnItems } = yield* getThreadRecords(threadId, ["runs", "turnItems"], {
+          runIds: [runId],
+          turnItemRunId: runId,
+          turnItemTypes: ["user_message"],
+        });
+        return { thread, messages, runs, turnItems };
+      },
+      (effect, threadId) =>
+        sql.withTransaction(effect).pipe(Effect.mapError(controlReadError(threadId))),
+    );
+
     const getRunCardRecords: ProjectionStoreV2Shape["getRunCardRecords"] = Effect.fn(
       "ProjectionStore.getRunCardRecords",
     )(
@@ -9926,6 +9974,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         ),
       getThreadRecords: (threadId, fields, filter) =>
         getThreadRecords(threadId, fields, filter).pipe(NodeSqliteClient.readOnly),
+      getRunningRunRecords: readOnReader(getRunningRunRecords),
+      getMessageRunRecords: readOnReader(getMessageRunRecords),
       getRuntimeRequest: readOnReader(getRuntimeRequest),
       getPlan: readOnReader(getPlan),
       getProviderControlContext: readOnReader(getProviderControlContext),

@@ -487,6 +487,13 @@ export interface OrchestratorV2Shape {
     fields: ReadonlyArray<K>,
     filter?: ProjectionRecordFilter,
   ) => Effect.Effect<ProjectionRecords<K>, OrchestratorV2Error>;
+  readonly getRunningRunRecords: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ProjectionRecords<"runs" | "providerTurns">, OrchestratorV2Error>;
+  readonly getMessageRunRecords: (
+    threadId: ThreadId,
+    messageId: MessageId,
+  ) => Effect.Effect<ProjectionRecords<"runs" | "messages" | "turnItems">, OrchestratorV2Error>;
   readonly listAppOwnedChildThreadIds: (
     threadId: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ThreadId>, OrchestratorV2Error>;
@@ -18209,6 +18216,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       function (threadId, fields, filter) {
         return projectionStore
           .getThreadRecords(threadId, fields, filter)
+          .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+      },
+    ),
+    getRunningRunRecords: Effect.fn("OrchestratorV2.getRunningRunRecords")(function (threadId) {
+      return projectionStore
+        .getRunningRunRecords(threadId)
+        .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+    }),
+    getMessageRunRecords: Effect.fn("OrchestratorV2.getMessageRunRecords")(
+      function (threadId, messageId) {
+        return projectionStore
+          .getMessageRunRecords(threadId, messageId)
           .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
       },
     ),

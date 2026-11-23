@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ProviderTurnId,
+  RunId,
   ThreadId,
   TurnItemId,
   OrchestrationV2DomainEvent,
@@ -23,6 +24,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ModelCooldowns } from "../usage/UsageLimitSources.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import { nextAutoSteerPromotion, readAutoSteerRecords } from "./AutoSteerQueuedService.ts";
 import * as Events from "./EventSink.ts";
 import * as Outbox from "./EffectOutbox.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -332,6 +334,47 @@ it.effect.each(["reordered", "head-held", "tail-held", "no-opt-in", "compacting"
       assert.deepEqual(after.messages, before.messages);
       assert.deepEqual(yield* (yield* Outbox.EffectOutboxV2).listByCommandId(commandId), []);
     }).pipe(Effect.provide(layer)),
+);
+
+it.effect("auto-steer reads only queued and active runs, and still finds the promotion", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    const finished = { ...f.active, id: RunId.make("run:auto-promotion:finished") };
+    yield* f.events.writeWithEffects({
+      events: yield* Effect.forEach(
+        [
+          f.event({
+            ...f.base,
+            type: "run.updated",
+            runId: finished.id,
+            payload: { ...finished, ordinal: 100, status: "completed", completedAt: f.now },
+          }),
+          f.event({
+            ...f.base,
+            type: "run.updated",
+            runId: f.first.id,
+            payload: { ...f.first, autoSteer: true },
+          }),
+        ],
+        (value) => decodeEvent(value),
+      ),
+      effects: [],
+    });
+    const records = yield* readAutoSteerRecords(f.store, f.threadId);
+    assert.ok(records);
+    assert.sameMembers(
+      records.runs.map((run) => run.id),
+      [f.active.id, f.first.id, f.second.id],
+    );
+    assert.deepEqual(
+      records.providerTurns.map((turn) => turn.id),
+      [f.turnId],
+    );
+    assert.deepEqual(nextAutoSteerPromotion(records), {
+      queuedRunId: f.first.id,
+      targetRunId: f.active.id,
+    });
+  }).pipe(Effect.provide(layer)),
 );
 
 it.effect("manual promotion still consumes ordinary input without automatic opt-in", () =>
