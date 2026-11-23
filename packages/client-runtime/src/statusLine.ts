@@ -144,7 +144,7 @@ function usageWindows(source: StatusLineInputSource): ReadonlyArray<StatusLineUs
   const instanceId = source.modelSelection?.instanceId;
   const provider = source.providers.find((candidate) => candidate.instanceId === instanceId);
   if (instanceId === undefined || !provider) return [];
-  return providerUsageWindows(provider, source, false).filter((window) => !window.account);
+  return providerUsageWindows(provider, source, false);
 }
 
 function providerUsageWindows(
@@ -218,7 +218,7 @@ function findUsageWindow(
   windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
 ) {
-  const matching = windows.filter((window) => window.kind === kind);
+  const matching = windows.filter((window) => window.kind === kind && !window.account);
   return matching.find((candidate) => candidate.modelIds === undefined) ?? matching[0];
 }
 
@@ -343,6 +343,9 @@ export interface StatusLineStats {
   readonly contextMaxTokens: number | null;
   readonly fiveHour: StatusLineLimit | null;
   readonly weekly: StatusLineLimit | null;
+  readonly weeklyAccounts: ReadonlyArray<
+    StatusLineLimit & { readonly id: string; readonly label: string }
+  >;
   readonly cachePercent: number | null;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
@@ -398,6 +401,7 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
   const { selection, provider, model } = selectedModel(source);
   const context = source.contextWindow;
   const windows = usageWindows(source);
+  const weekly = statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio);
   const inputTokens = context?.inputTokens ?? null;
   const cachedInputTokens = context?.cachedInputTokens ?? null;
   return {
@@ -419,7 +423,21 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
     fiveHour: source.hideSessionLimit
       ? null
       : statusLineLimit(windows, "session", source.nowMs, source.showSessionDepletionRatio),
-    weekly: statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio),
+    weekly,
+    weeklyAccounts:
+      weekly !== null
+        ? []
+        : windows.flatMap((window) =>
+            window.kind === "weekly" && window.account
+              ? [
+                  {
+                    id: JSON.stringify([window.id, window.account.key]),
+                    label: window.account.label,
+                    ...limitFromWindow(window, source.nowMs, source.showWeeklyDepletionRatio),
+                  },
+                ]
+              : [],
+          ),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
         ? 100 * Math.min(1, cachedInputTokens / inputTokens)

@@ -32,12 +32,43 @@ describe("mobile status line priority", () => {
       context: { full: 190, compact: 180 },
       modelNames: [{ name: "N4", width: 85 }],
       effortWidth: 30,
-      weekly: null,
+      weekly: [],
       fiveHour: null,
       extras: [{ id: "cost", full: 40 }],
     });
     expect(layout).toMatchObject({ modelName: "N4", effort: false, wrapCore: true });
     expect(layout.visible.size).toBe(0);
+  });
+
+  it("keeps the weekly account dial that fits ahead of the five-hour dial", () => {
+    const account = {
+      full: { width: 90, ratioWidth: null },
+      compact: { width: 86, ratioWidth: null },
+    };
+    const layout = fitMobileStatusDials({
+      availableWidth: 360,
+      context: { full: 150, compact: 148 },
+      modelNames: [{ name: "O5.5", width: 50 }],
+      effortWidth: null,
+      weekly: [account, account],
+      fiveHour: { width: 80, ratioWidth: null },
+      extras: [],
+    });
+    expect(layout).toMatchObject({ weeklyCount: 1, fiveHour: false });
+  });
+
+  it("keeps a weekly depletion ratio when it takes no extra room", () => {
+    const width = { width: 55, ratioWidth: 0 };
+    const layout = fitMobileStatusDials({
+      availableWidth: 150,
+      context: { full: 90, compact: 90 },
+      modelNames: [],
+      effortWidth: null,
+      weekly: [{ full: width, compact: width }],
+      fiveHour: null,
+      extras: [],
+    });
+    expect(layout).toMatchObject({ weeklyCount: 1, weeklyRatio: true });
   });
 
   it.each([
@@ -60,16 +91,18 @@ describe("mobile status line priority", () => {
           { name: "A6.2", width: 26 },
         ],
         effortWidth: 20,
-        weekly: {
-          full: { width: 55, ratioWidth: 10 },
-          compact: { width: 50, ratioWidth: 10 },
-        },
+        weekly: [
+          {
+            full: { width: 55, ratioWidth: 10 },
+            compact: { width: 50, ratioWidth: 10 },
+          },
+        ],
         fiveHour: { width: 50, ratioWidth: 10 },
         extras: [{ id: "cost", full: 26 }],
       });
       expect(layout).toMatchObject({
         modelName,
-        weekly: true,
+        weeklyCount: 1,
         fiveHour,
         weeklyRatio,
         fiveHourRatio,

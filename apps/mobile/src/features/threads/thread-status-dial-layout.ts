@@ -48,7 +48,7 @@ export function fitMobileStatusDials<Id extends string>(input: {
   readonly context: { readonly full: number; readonly compact: number };
   readonly modelNames: readonly ModelWidth[];
   readonly effortWidth: number | null;
-  readonly weekly: { readonly full: LimitWidth; readonly compact: LimitWidth } | null;
+  readonly weekly: readonly { readonly full: LimitWidth; readonly compact: LimitWidth }[];
   readonly fiveHour: LimitWidth | null;
   readonly extras: readonly { readonly id: Id; readonly full: number }[];
 }) {
@@ -58,7 +58,7 @@ export function fitMobileStatusDials<Id extends string>(input: {
     input.context.full +
     (input.modelNames[0]?.width ?? 0) +
     (input.effortWidth ?? 0) +
-    totalLimitWidth(input.weekly?.full ?? null) +
+    input.weekly.reduce((total, limit) => total + totalLimitWidth(limit.full), 0) +
     totalLimitWidth(input.fiveHour) +
     input.extras.reduce((total, item) => total + item.full, 0);
   const compact = input.availableWidth < fullWidth;
@@ -73,10 +73,16 @@ export function fitMobileStatusDials<Id extends string>(input: {
     room -= width;
     return true;
   };
-  const weeklyLimit = (compact ? input.weekly?.compact : input.weekly?.full) ?? null;
-  const weekly = reserve(weeklyLimit?.width ?? null);
+  const weeklyLimits = input.weekly.map((limit) => (compact ? limit.compact : limit.full));
+  let weeklyCount = 0;
+  let weeklyRatioWidth: number | null = null;
+  for (const limit of weeklyLimits) {
+    if (!reserve(limit.width)) break;
+    weeklyCount += 1;
+    if (limit.ratioWidth !== null) weeklyRatioWidth = (weeklyRatioWidth ?? 0) + limit.ratioWidth;
+  }
   const fiveHour = reserve(input.fiveHour?.width ?? null);
-  const weeklyRatio = weekly && reserve(weeklyLimit?.ratioWidth ?? null);
+  const weeklyRatio = reserve(weeklyRatioWidth);
   const fiveHourRatio = fiveHour && reserve(input.fiveHour?.ratioWidth ?? null);
   const effort = reserve(input.effortWidth);
   const modelName =
@@ -89,7 +95,7 @@ export function fitMobileStatusDials<Id extends string>(input: {
     compact,
     modelName,
     effort,
-    weekly,
+    weeklyCount,
     fiveHour,
     weeklyRatio,
     fiveHourRatio,

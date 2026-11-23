@@ -322,6 +322,10 @@ export function ThreadStatusDialStrip(props: {
       : stats.contextPercent === null
         ? textWidth(caption)
         : Math.max(0, textWidth(caption) - textWidth(context));
+  const weeklyLimits =
+    stats.weekly === null ? stats.weeklyAccounts : [{ ...stats.weekly, id: "weekly", label: null }];
+  const weeklyCaption = (label: string | null, compact: boolean) =>
+    (compact ? compactWeeklyLabel : weeklyLabel) + (label === null ? "" : ` · ${label}`);
   const layout = fitMobileStatusDials({
     availableWidth,
     context: {
@@ -333,13 +337,10 @@ export function ThreadStatusDialStrip(props: {
       width: modelLabelWidth(name, fontScale, model.truncate),
     })),
     effortWidth: effort === null ? null : textWidth(effort) + 4,
-    weekly:
-      stats.weekly === null
-        ? null
-        : {
-            full: limitWidth(stats.weekly, weeklyLabel),
-            compact: limitWidth(stats.weekly, compactWeeklyLabel),
-          },
+    weekly: weeklyLimits.map((limit) => ({
+      full: limitWidth(limit, weeklyCaption(limit.label, false)),
+      compact: limitWidth(limit, weeklyCaption(limit.label, true)),
+    })),
     fiveHour: stats.fiveHour === null ? null : limitWidth(stats.fiveHour, "5h"),
     extras: [
       ...item("cost", cost),
@@ -409,15 +410,16 @@ export function ThreadStatusDialStrip(props: {
           showDepletionRatio={layout.fiveHourRatio}
         />
       )}
-      {stats.weekly === null || !layout.weekly ? null : (
+      {weeklyLimits.slice(0, layout.weeklyCount).map((limit) => (
         <LimitDial
-          limit={stats.weekly}
+          key={limit.id}
+          limit={limit}
           nowMs={nowMs}
-          title={gt("Weekly limit")}
+          title={gt("Weekly limit") + (limit.label === null ? "" : ` · ${limit.label}`)}
+          caption={weeklyCaption(limit.label, compact)}
           showDepletionRatio={layout.weeklyRatio}
-          caption={compact ? compactWeeklyLabel : weeklyLabel}
         />
-      )}
+      ))}
       {cost === null || !visible.has("cost") ? null : (
         <View
           accessible
@@ -637,6 +639,14 @@ export function ThreadStatusDialDetails(props: {
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
         )}
+        {stats.weeklyAccounts.map((limit) => (
+          <LimitFact
+            key={limit.id}
+            name={`${gt("Weekly limit")} · ${limit.label}`}
+            limit={limit}
+            nowMs={nowMs}
+          />
+        ))}
         {stats.cost === null ? null : (
           <Fact
             name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
