@@ -268,7 +268,7 @@ export function StatusDialStrip(props: {
       short={gt("ctx", { $context: "short label for model context" })}
     />
   );
-  const cost = stats.cost;
+  const threadWeeklyUsage = stats.threadWeeklyUsage;
   const fastLabel =
     stats.fastMode === null ? null : stats.fastMode ? gt("Fast mode on") : gt("Fast mode off");
   return (
@@ -323,13 +323,12 @@ export function StatusDialStrip(props: {
             );
           })}
         </span>
-        {cost === null ? null : (
+        {threadWeeklyUsage === null ? null : (
           <Stat
-            label={cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            label={gt("Estimated thread share of weekly limit")}
             className="@max-[14rem]/dials:hidden"
           >
-            {cost.amount}
-            {cost.basis === "api" ? " API" : ""}
+            {threadWeeklyUsage}
           </Stat>
         )}
         {uptime === null ? null : (
@@ -473,6 +472,7 @@ export function StatusDialCard(props: {
 }) {
   const gt = useGT();
   const { stats, nowMs } = props;
+  const threadWeeklyUsage = stats.threadWeeklyUsage;
   const uptime = statusLineUptime(props.createdAt, nowMs);
   return (
     <div className="grid gap-3 tabular-nums">
@@ -514,15 +514,17 @@ export function StatusDialCard(props: {
             nowMs={nowMs}
           />
         ))}
-        {stats.cost === null ? null : (
+        {threadWeeklyUsage === null ? null : (
           <Fact
-            name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            name={gt("Estimated thread share of weekly limit")}
             details={[
               gt("Recorded main-agent usage for the current provider thread."),
-              ...(stats.cost.partial ? [gt("Some turns could not be priced in full.")] : []),
+              ...(stats.threadWeeklyUsagePartial
+                ? [gt("Some turns could not be priced in full.")]
+                : []),
             ]}
           >
-            {stats.cost.amount}
+            {threadWeeklyUsage}
           </Fact>
         )}
         {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}

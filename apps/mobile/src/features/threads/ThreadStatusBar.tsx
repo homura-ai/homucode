@@ -205,7 +205,6 @@ export function ThreadStatusBar(
     contextWindow,
     nowMs,
     accounting,
-    useApiPrice: config?.settings.statusLineUseApiPrice === true,
     hideSessionLimit: config?.settings.statusLineHideSessionLimit === true,
     showSessionDepletionRatio: config?.settings.statusLineShowSessionDepletionRatio === true,
     showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,

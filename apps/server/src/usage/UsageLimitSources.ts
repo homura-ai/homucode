@@ -144,6 +144,7 @@ export const make = Effect.gen(function* () {
       ...(providerRoute
         ? { providerRoute: providerRoute.origin + providerRoute.pathname.replace(/\/+$/, "") }
         : {}),
+      ...(config.claudeUltra === true ? { claudeUltra: true } : {}),
       checkedAt,
     } as const;
     const managementKey = yield* readManagementKey(config);

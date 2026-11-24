@@ -95,6 +95,7 @@ export const UsageLimitSourceSnapshot = Schema.Struct({
   endpoint: Schema.optional(TrimmedNonEmptyString),
   /** Exact Claude provider route for the status line when it differs from the polling endpoint. */
   providerRoute: Schema.optional(TrimmedNonEmptyString),
+  claudeUltra: Schema.optionalKey(Schema.Boolean),
   checkedAt: IsoDateTime,
   accounts: ForwardCompatibleArray(UsageLimitSourceAccount),
   codexModelCooldowns: Schema.optional(

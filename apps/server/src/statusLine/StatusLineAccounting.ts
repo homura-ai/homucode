@@ -1,10 +1,18 @@
-import type { OrchestrationV2ProviderTurn, StatusLineAccountingInput } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ProviderTurn,
+  ServerProvider,
+  StatusLineAccountingInput,
+  UsageLimitSourceSnapshot,
+} from "@t3tools/contracts";
 import type { StatusLineAccounting as Accounting } from "@t3tools/contracts";
 import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
 } from "@t3tools/shared/model";
-import { usageLimitSourceAtEndpoint } from "@t3tools/shared/usageLimits";
+import {
+  resolveLimitAccountMetadata,
+  usageLimitSourceAtEndpoint,
+} from "@t3tools/shared/usageLimits";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -38,15 +46,63 @@ function subscriptionShare(provider: "codex" | "claude", plan: string | undefine
   return null;
 }
 
+// API-equivalent dollars per full weekly allowance, measured on pbox in November 2026.
+function weeklyAllowanceUsd(provider: "codex" | "claude", plan: string | undefined, model: string) {
+  if (provider === "codex") {
+    if (plan === "ChatGPT Pro 100 Subscription") return 489;
+    if (plan === "ChatGPT Edu Plus Subscription") return 64;
+  } else if (plan === "Ultra" || plan === "Claude Ultra Subscription") {
+    if (/(?:^|[-/])fable(?:-|$)/i.test(model)) return 811;
+    if (/(?:^|[-/])(?:opus|sonnet|haiku)(?:-|$)/i.test(model)) return 1447;
+  }
+  return null;
+}
+
+interface StatusLinePlans {
+  readonly weekly: readonly (string | undefined)[];
+  readonly legacy: string | undefined;
+}
+
+export function statusLineProxyPlans(
+  provider: ServerProvider,
+  providers: readonly ServerProvider[],
+  sources: readonly UsageLimitSourceSnapshot[],
+): StatusLinePlans {
+  if (provider.auth.endpoint === undefined) return { weekly: [], legacy: undefined };
+  const hub = usageLimitSourceAtEndpoint(sources, provider.auth.endpoint, {
+    useProviderRoute: provider.driver === "claudeAgent",
+  });
+  if (!hub || hub.error) return { weekly: [], legacy: undefined };
+  const { resolveKey, plans } = resolveLimitAccountMetadata(providers, sources, hub);
+  const accounts = hub.accounts.filter((account) => account.driver === provider.driver);
+  const legacy = accounts[0]?.plan;
+  const weekly = accounts.map((account) => {
+    const key = resolveKey(account);
+    const plan = (key === null ? undefined : plans.get(key)?.plan) ?? account.plan;
+    return account.driver === "claudeAgent" &&
+      plan === "Claude Subscription" &&
+      hub.claudeUltra === true
+      ? "Claude Ultra Subscription"
+      : plan;
+  });
+  return {
+    weekly: [...new Set(weekly)],
+    legacy: accounts.every((account) => account.plan === legacy) ? legacy : undefined,
+  };
+}
+
 export function summarizeStatusLineCost(
   provider: "codex" | "claude",
-  plan: string | undefined,
+  plans: StatusLinePlans,
   records: readonly PricedRecord[],
   prices: readonly PricedUsage[],
   partial: boolean,
-): Pick<Accounting, "apiCostUsd" | "subscriptionCostUsd" | "partial"> {
+): Pick<Accounting, "apiCostUsd" | "subscriptionCostUsd" | "weeklyUsagePercent" | "partial"> {
   let apiCostUsd: number | null = null;
   let subscriptionCostUsd: number | null = 0;
+  let minimumPercent = 0;
+  let maximumPercent = 0;
+  let weeklyEstimateAvailable = plans.weekly.length > 0;
   for (const [index, record] of records.entries()) {
     const price = prices[index];
     if (price === undefined || price.costSource === "unpriced") {
@@ -55,13 +111,27 @@ export function summarizeStatusLineCost(
     }
     const amount = price.costUsd;
     apiCostUsd = (apiCostUsd ?? 0) + amount;
-    const share = subscriptionShare(provider, plan, record.model);
+    if (weeklyEstimateAvailable) {
+      const allowances = plans.weekly.map((candidate) =>
+        weeklyAllowanceUsd(provider, candidate, record.model),
+      );
+      if (allowances.every((allowance) => allowance !== null)) {
+        minimumPercent += (100 * amount) / Math.max(...allowances);
+        maximumPercent += (100 * amount) / Math.min(...allowances);
+      } else {
+        weeklyEstimateAvailable = false;
+      }
+    }
+    const share = subscriptionShare(provider, plans.legacy, record.model);
     subscriptionCostUsd =
       share === null || subscriptionCostUsd === null ? null : subscriptionCostUsd + amount * share;
   }
   return {
     apiCostUsd,
     subscriptionCostUsd: apiCostUsd === null ? null : subscriptionCostUsd,
+    ...(apiCostUsd !== null && weeklyEstimateAvailable
+      ? { weeklyUsagePercent: [minimumPercent, maximumPercent] }
+      : {}),
     partial,
   };
 }
@@ -131,24 +201,12 @@ const make = Effect.gen(function* () {
         const active = providerThreads.find((entry) => entry.id === activeId);
         const driver = active?.driver;
         if (driver !== "codex" && driver !== "claudeAgent") return null;
-        const provider = (yield* providers.getProviders).find(
-          (entry) => entry.instanceId === active?.providerInstanceId,
-        );
-        const matchingHub =
+        const snapshots = yield* providers.getProviders;
+        const provider = snapshots.find((entry) => entry.instanceId === active?.providerInstanceId);
+        const plans =
           provider?.auth.endpoint === undefined
-            ? undefined
-            : usageLimitSourceAtEndpoint(yield* hubs.current, provider.auth.endpoint, {
-                useProviderRoute: driver === "claudeAgent",
-              });
-        const plans = matchingHub?.accounts
-          .filter((account) => account.driver === driver)
-          .map((account) => account.plan);
-        const plan =
-          provider?.auth.endpoint === undefined
-            ? provider?.auth.label
-            : plans?.length && plans.every((candidate) => candidate === plans[0])
-              ? plans[0]
-              : undefined;
+            ? { weekly: [provider?.auth.label], legacy: provider?.auth.label }
+            : statusLineProxyPlans(provider, snapshots, yield* hubs.current);
 
         const turns = providerTurns.filter(
           (turn) =>
@@ -209,7 +267,7 @@ const make = Effect.gen(function* () {
           .priceRecords(kind, records)
           .pipe(Effect.orElseSucceed(() => []));
         return {
-          ...summarizeStatusLineCost(kind, plan, records, prices, partial),
+          ...summarizeStatusLineCost(kind, plans, records, prices, partial),
           apiDurationMs,
           outputStyle,
         };

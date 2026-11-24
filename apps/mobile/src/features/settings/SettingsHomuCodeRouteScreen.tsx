@@ -190,7 +190,9 @@ function HomuCodeServerSettings() {
         <SettingsSwitchRow
           icon="terminal"
           label={gt("Status line")}
-          subtitle={gt("Show the model, context, usage limits, and thread cost in the top bar.")}
+          subtitle={gt(
+            "Show the model, context, usage limits, and estimated weekly usage per thread in the top bar.",
+          )}
           value={uniformMobileSetting(targets, "statusLineEnabled")}
           disabled={
             !canWrite ||
@@ -232,17 +234,6 @@ function HomuCodeServerSettings() {
             onValueChange={(enabled) => write({ [setting]: enabled })}
           />
         ))}
-        <SettingsSwitchRow
-          label={gt("Use API prices for thread cost")}
-          subtitle={gt("Use API list prices instead of estimating the subscription cost.")}
-          value={uniformMobileSetting(targets, "statusLineUseApiPrice")}
-          disabled={
-            !canWrite ||
-            pending ||
-            managedSettingReason(targets, ["statusLineUseApiPrice"], resolve) !== undefined
-          }
-          onValueChange={(statusLineUseApiPrice) => write({ statusLineUseApiPrice })}
-        />
         {(["statusLineSessionBurnTauMinutes", "statusLineWeeklyBurnTauMinutes"] as const).map(
           (setting) => (
             <StatusLineBurnTauControl

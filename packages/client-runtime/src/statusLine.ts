@@ -40,7 +40,6 @@ export interface StatusLineInputSource {
   readonly showSessionDepletionRatio?: boolean;
   readonly showWeeklyDepletionRatio?: boolean;
   readonly accounting?: StatusLineAccounting | null;
-  readonly useApiPrice?: boolean;
 }
 
 export type StatusLineUsageSource = Pick<
@@ -306,26 +305,20 @@ export interface StatusLineLimit {
   readonly burnRatePercentPerSecond?: number;
 }
 
-interface StatusLineDisplayCost {
-  readonly amount: string;
-  readonly basis: "api" | "subscription";
-  readonly partial: boolean;
-}
-
-export function statusLineDisplayCost(
+export function formatStatusLineWeeklyUsage(
   accounting: StatusLineAccounting | null | undefined,
-  useApiPrice: boolean,
-): StatusLineDisplayCost | null {
-  if (accounting == null) return null;
-  const subscription = !useApiPrice && accounting.subscriptionCostUsd !== null;
-  const cost = subscription ? accounting.subscriptionCostUsd : accounting.apiCostUsd;
-  if (cost === null || !Number.isFinite(cost) || cost < 0) return null;
-  return {
-    amount:
-      cost > 0 && cost < 0.01 ? "<$0.01" : `${accounting.partial ? "≥" : ""}$${cost.toFixed(2)}`,
-    basis: subscription ? "subscription" : "api",
-    partial: accounting.partial,
-  };
+): string | null {
+  if (accounting?.weeklyUsagePercent === undefined) return null;
+  const [minimum, maximum] = accounting.weeklyUsagePercent;
+  const lower = minimum.toFixed(2);
+  const upper = maximum.toFixed(2);
+  if (minimum !== maximum) {
+    const range =
+      lower === upper ? `${minimum.toPrecision(2)}–${maximum.toPrecision(2)}` : `${lower}–${upper}`;
+    return `≈${range}%${accounting.partial ? "+" : ""}`;
+  }
+  if (accounting.partial) return `≥${(Math.floor(minimum * 100) / 100).toFixed(2)}%`;
+  return maximum > 0 && maximum < 0.01 ? "<0.01%" : `≈${lower}%`;
 }
 
 /** What a client draws its own status line from, when no custom command draws it. */
@@ -334,7 +327,8 @@ export interface StatusLineStats {
   readonly effort: string | null;
   readonly fastMode: boolean | null;
   readonly version: string | null;
-  readonly cost: StatusLineDisplayCost | null;
+  readonly threadWeeklyUsage: string | null;
+  readonly threadWeeklyUsagePartial: boolean;
   readonly apiTime: string | null;
   readonly outputStyle: string | null;
   readonly cwd: string | null;
@@ -409,7 +403,8 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
     effort: effortLevel(selection, model) ?? null,
     fastMode: statusLineFastMode(selection, model),
     version: provider?.version || null,
-    cost: statusLineDisplayCost(source.accounting, source.useApiPrice === true),
+    threadWeeklyUsage: formatStatusLineWeeklyUsage(source.accounting),
+    threadWeeklyUsagePartial: source.accounting?.partial === true,
     apiTime:
       source.accounting?.apiDurationMs == null
         ? null

@@ -400,8 +400,11 @@ const CODEX_HUB: HubProvider = {
         : null;
     const available = yield* credits(call).pipe(Effect.orElseSucceed(() => undefined));
     const next = available?.[0];
+    const tokenPlan = account.id_token?.plan_type ?? account.id_token?.chatgpt_plan_type;
     const planType =
-      usage.plan_type ?? account.id_token?.plan_type ?? account.id_token?.chatgpt_plan_type;
+      usage.plan_type === undefined || usage.plan_type === "unknown"
+        ? (tokenPlan ?? usage.plan_type)
+        : usage.plan_type;
     return {
       ...listedIdentity(account),
       plan: codexPlanLabel(planType),
