@@ -153,38 +153,61 @@ Enable **Status line** under **Settings → HomuCode → Misc.+Agent behavior** 
 token count. The 5-hour and weekly dials show the percentage remaining. A tick marks
 the projected remainder at reset. In a narrow bar, labels shorten and the weekly limit
 stays visible longer than the 5-hour limit. The 5-hour dial appears when your provider
-reports that limit. Turn on **Hide 5-hour limit** in the same settings to always hide it.
+reports that limit. Each quota bar can be hidden independently. Use **Bar order** to
+move the 5-hour, weekly, and custom bars.
 On desktop and web, the model picker colors the reasoning effort. On mobile, the status
 line colors the model and effort together. As space gets tight, it shortens the model
 name while keeping its version, such as `A6.2 hi`.
 
 The thread’s estimated share of the weekly limit covers recorded main-agent usage in the
-active provider thread. It converts API-equivalent usage using measured weekly allowances
-for supported plans. When a proxy can route to accounts with different allowances, the
-estimate shows a range. A ≥ or a trailing + marks an estimate based on incomplete usage. Claude also
-reports API time and output style on completed turns.
+active provider thread. For CLIProxyAPI it shows a separate estimate for each account
+recorded in the usage ledger. Each estimate uses API-equivalent token prices and the
+account's estimated weekly allowance. A trailing + indicates incomplete attribution or
+pricing. Claude also reports API time and output style on completed turns.
 
 When CLIProxyAPI omits the plan and every Claude account on that hub uses Ultra, set
 `claudeUltra` to `true` on that entry in the server’s `usageLimitSources` settings.
 
-The projected remainder, depletion ratio, and quota dial and countdown colors all use
-the recent smoothed burn rate. Green means low risk, yellow means the quota is on pace
-to run out at reset, and the color moves toward red as exhaustion approaches. Hover or
-focus the status line on desktop and web, or tap it on mobile, to see the details and change
-**5-hour burn-rate smoothing** or **Weekly burn-rate smoothing**. The same controls are
-in Settings. Longer durations make the colors less sensitive to recent usage. The
-defaults are 30 minutes and one day.
+Weekly bars go from green at 100% remaining to red at 0%. The 5-hour bar defaults to
+coloring by the forecast at reset. To color either bar by burn rate, set its **Target rate**
+in percentage points per hour. The target is the midpoint of the color scale. Slower
+usage moves the color toward green and faster usage moves it toward red.
+
+Hover or focus the status line on desktop and web, or tap it on mobile, to see the details
+and open **Status line settings**. The smoothing controls adjust how much recent usage
+affects the forecast. The defaults are 30 minutes for the 5-hour bar and one day for
+weekly bars. Select **Exponential moving average**, **Sliding window**, or **Since last
+reset** for each built-in quota bar. Set the length when using a sliding window.
+An EMA decays between quota observations. For a supported weekly account with a
+configured ledger, the status line also estimates the impact of HomuCode requests and
+the previous interval's unexplained usage. It caps the estimated drop at one percentage
+point between provider meter changes.
 
 For a [configured CLIProxyAPI hub](usage.md#connect-a-cliproxyapi-hub), the percentages pool
 the latest account readings, and the countdown shows the next reset.
 Pooled weekly Codex and Claude quotas use monthly subscription prices as relative weights
 when each account's tier and price are known. If a multi-account weekly quota cannot be
-combined, the status line shows separate dials labeled with each account's initials.
-Turn on **5-hour depletion ratio** and **Weekly depletion ratio** independently in Settings
-to show each percentage beside its dial label. The ratio estimates how much of the
-remaining quota you will use before reset. Above 100% means you are on pace to run out
-first. A negative projected remainder shows how far past the limit that pace would take
-you. Projections and ratios appear once a recent burn-rate estimate is available.
+combined, the status line shows separate dials. Set an **Account name** in Status line
+settings to label one. Unnamed accounts show just the quota.
+**Quota pace** shows how much of the remaining quota you are on track to use before reset.
+At 100%, you would run out right at reset. Above 100%, you would run out sooner.
+A negative projected remainder shows how far past the limit that pace would take you.
+Quota pace is on by default and can be hidden independently for each bar with a reset
+forecast.
+
+Select an environment in Status line settings and choose **Add custom bar** to show a tracked
+quota, grouped usage, or a custom metric. Give the bar a label and optionally a target rate.
+Grouped usage can cover every account behind a provider instance, accounts serving
+selected models, or a list of accounts. It combines allowances using API-equivalent
+weights. Choose quota percentages or HomuCode usage only, and an EMA, sliding window,
+account reset, or start time returned by a command for that bar. The start-time command
+reads the status-line JSON on stdin and prints one ISO timestamp. Historical windows
+need quota readings or ledger entries for their selected interval.
+If you choose a custom metric, set **Metrics command** to a command that reads
+the status-line JSON on stdin and prints a JSON object keyed by metric name. For example,
+`{"build":{"remainingPercent":64,"burnRatePercentPerHour":2.5}}` supplies the metric
+`build`. The burn rate and an ISO `resetsAt` timestamp are optional. A bar appears when
+its source reports a value.
 
 On desktop and web, **All models** shows the environment's provider quotas. Turn on
 **Show model names** in the section to see each provider's model list. Both preferences

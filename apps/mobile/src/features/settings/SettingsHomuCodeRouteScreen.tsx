@@ -3,10 +3,12 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AuthSettingsWriteScope, type ServerSettingsPatch } from "@t3tools/contracts";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { useRef, useState } from "react";
+import { View } from "react-native";
 import { AsyncResult } from "effect/reactivity";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import {
   mobilePreferencesAtom,
@@ -25,6 +27,14 @@ import { SettingsRow } from "./components/SettingsRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { StatusLineBurnTauControl } from "./components/StatusLineBurnTauControl";
+import {
+  StatusLineCustomBarsSettings,
+  StatusLineTargetRateControl,
+} from "./components/StatusLineCustomBarsSettings";
+import {
+  StatusLineRateEstimatorControl,
+  statusLineEstimatorKey,
+} from "./components/StatusLineRateEstimatorControl";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import {
@@ -154,6 +164,10 @@ function HomuCodeServerSettings() {
   const autoreviewTargets = targets.filter((target) =>
     supportsSharedSettingsSync(target.environment),
   );
+  const statusLineTargets = targets.filter(
+    (target) =>
+      target.environment.serverConfig.environment.capabilities.statusLineCustomBars === true,
+  );
   const writable = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
   const writeSettings = useSettingsWriter();
   const writing = useRef(false);
@@ -161,29 +175,28 @@ function HomuCodeServerSettings() {
   const canWrite =
     !projectSelected && targets.every((target) => writable.has(target.environment.environmentId));
 
-  const write = (patch: ServerSettingsPatch) => {
+  const write = async (patch: ServerSettingsPatch, destinations = targets) => {
     if (
       writing.current ||
-      !canWrite ||
-      targets.some(
+      projectSelected ||
+      destinations.some(
         (target) => !readEnvironmentScope(target.environment.environmentId, AuthSettingsWriteScope),
       )
     )
-      return;
+      return false;
     writing.current = true;
     setPending(true);
-    void writeSettings(targets, planMobileScopedSettingsPatch(targets, false, patch)).finally(
-      () => {
-        writing.current = false;
-        setPending(false);
-      },
-    );
+    return writeSettings(
+      destinations,
+      planMobileScopedSettingsPatch(destinations, false, patch),
+    ).finally(() => {
+      writing.current = false;
+      setPending(false);
+    });
   };
 
   if (targets.length === 0) return null;
-  const depletionRatioDescription = gt(
-    "Show the time until reset as a percentage of the time until quota is projected to run out.",
-  );
+  const quotaPaceDescription = gt("100% means the quota is projected to run out just at reset.");
   return (
     <>
       <SettingsSection title={gt("Status line")}>
@@ -199,7 +212,7 @@ function HomuCodeServerSettings() {
             pending ||
             managedSettingReason(targets, ["statusLineEnabled"], resolve) !== undefined
           }
-          onValueChange={(enabled) => write({ statusLineEnabled: enabled })}
+          onValueChange={(enabled) => void write({ statusLineEnabled: enabled })}
         />
         {(
           [
@@ -209,15 +222,12 @@ function HomuCodeServerSettings() {
               gt("When off, show the 5-hour limit when it is available."),
             ],
             [
-              "statusLineShowSessionDepletionRatio",
-              gt("5-hour depletion ratio"),
-              depletionRatioDescription,
+              "statusLineHideWeeklyLimit",
+              gt("Hide weekly limit"),
+              gt("When off, show the weekly limit when it is available."),
             ],
-            [
-              "statusLineShowWeeklyDepletionRatio",
-              gt("Weekly depletion ratio"),
-              depletionRatioDescription,
-            ],
+            ["statusLineShowSessionDepletionRatio", gt("5-hour quota pace"), quotaPaceDescription],
+            ["statusLineShowWeeklyDepletionRatio", gt("Weekly quota pace"), quotaPaceDescription],
           ] as const
         ).map(([setting, label, description]) => (
           <SettingsSwitchRow
@@ -231,7 +241,7 @@ function HomuCodeServerSettings() {
               pending ||
               managedSettingReason(targets, [setting], resolve) !== undefined
             }
-            onValueChange={(enabled) => write({ [setting]: enabled })}
+            onValueChange={(enabled) => void write({ [setting]: enabled })}
           />
         ))}
         {(["statusLineSessionBurnTauMinutes", "statusLineWeeklyBurnTauMinutes"] as const).map(
@@ -245,11 +255,88 @@ function HomuCodeServerSettings() {
                 pending ||
                 managedSettingReason(targets, [setting], resolve) !== undefined
               }
-              onChange={(minutes) => write({ [setting]: minutes })}
+              onChange={(minutes) => void write({ [setting]: minutes })}
             />
           ),
         )}
+        {statusLineTargets.length > 0 && !projectSelected ? (
+          <View className="gap-3 px-4 py-3">
+            {(
+              [
+                ["statusLineSessionRateEstimator", gt("5-hour rate estimator"), 30],
+                ["statusLineWeeklyRateEstimator", gt("Weekly rate estimator"), 1440],
+              ] as const
+            ).map(([setting, label, defaultMinutes]) => {
+              const first = statusLineTargets[0]?.settings[setting];
+              const value =
+                first !== undefined &&
+                statusLineTargets.every((target) => {
+                  const estimator = target.settings[setting];
+                  return (
+                    estimator && statusLineEstimatorKey(estimator) === statusLineEstimatorKey(first)
+                  );
+                })
+                  ? first
+                  : null;
+              return (
+                <StatusLineRateEstimatorControl
+                  key={setting}
+                  label={label}
+                  value={value}
+                  defaultMinutes={defaultMinutes}
+                  disabled={
+                    pending ||
+                    statusLineTargets.some(
+                      (target) => !writable.has(target.environment.environmentId),
+                    ) ||
+                    managedSettingReason(statusLineTargets, [setting], resolve) !== undefined
+                  }
+                  onChange={(estimator) => write({ [setting]: estimator }, statusLineTargets)}
+                />
+              );
+            })}
+            {(
+              [
+                ["statusLineSessionTargetPercentPerHour", gt("5-hour target rate (pp/hour)")],
+                ["statusLineWeeklyTargetPercentPerHour", gt("Weekly target rate (pp/hour)")],
+              ] as const
+            ).map(([setting, label]) => {
+              const value = uniformMobileSetting(statusLineTargets, setting);
+              return (
+                <StatusLineTargetRateControl
+                  key={`${setting}:${JSON.stringify(statusLineTargets.map((target) => target.environment.environmentId))}`}
+                  label={label}
+                  value={value}
+                  mixed={
+                    value === null &&
+                    statusLineTargets.some((target) => target.settings[setting] !== null)
+                  }
+                  disabled={
+                    pending ||
+                    statusLineTargets.some(
+                      (target) => !writable.has(target.environment.environmentId),
+                    ) ||
+                    managedSettingReason(statusLineTargets, [setting], resolve) !== undefined
+                  }
+                  onChange={(rate) => write({ [setting]: rate }, statusLineTargets)}
+                />
+              );
+            })}
+            <Text className="text-xs text-foreground-muted">
+              {gt("Leave blank to use the default target rate.")}
+            </Text>
+          </View>
+        ) : null}
       </SettingsSection>
+      {!projectSelected
+        ? statusLineTargets.map((target) => (
+            <StatusLineCustomBarsSettings
+              key={target.environment.environmentId}
+              target={target}
+              canWrite={writable.has(target.environment.environmentId)}
+            />
+          ))
+        : null}
       {!projectSelected ? (
         <SettingsSection title={gt("Subagents")}>
           <SettingsSwitchRow
@@ -264,7 +351,7 @@ function HomuCodeServerSettings() {
               pending ||
               managedSettingReason(targets, ["subagentsInheritParentPin"], resolve) !== undefined
             }
-            onValueChange={(enabled) => write({ subagentsInheritParentPin: enabled })}
+            onValueChange={(enabled) => void write({ subagentsInheritParentPin: enabled })}
           />
         </SettingsSection>
       ) : null}
@@ -282,7 +369,7 @@ function HomuCodeServerSettings() {
               pending ||
               managedSettingReason(targets, ["autoreviewEnabled"], resolve) !== undefined
             }
-            onValueChange={(enabled) => write({ autoreviewEnabled: enabled })}
+            onValueChange={(enabled) => void write({ autoreviewEnabled: enabled })}
           />
         </SettingsSection>
       ) : null}

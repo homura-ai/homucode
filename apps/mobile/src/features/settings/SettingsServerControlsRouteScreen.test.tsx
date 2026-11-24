@@ -56,6 +56,7 @@ vi.mock("./components/IssueTrackerSection", () => ({ IssueTrackerSection: () => 
 vi.mock("./components/SourceControlProvidersSection", () => ({
   SourceControlProvidersSection: () => null,
 }));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => "status-line-bar" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({}) }));
 vi.mock("../../state/session", () => ({
@@ -96,6 +97,7 @@ vi.mock("../threads/thread-settings-options", () => ({
   withManagedRuntimeModeLimits: (choices: readonly unknown[]) => choices,
 }));
 vi.mock("../../components/ui/Menu", () => ({ Menu: Children }));
+vi.mock("../../components/ui/ThemedSwitch", () => ({ ThemedSwitch: () => null }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/Button", () => ({
@@ -308,8 +310,9 @@ describe("SettingsServerControlsRouteScreen", () => {
     for (const [label, key] of [
       ["Status line", "statusLineEnabled"],
       ["Hide 5-hour limit", "statusLineHideSessionLimit"],
-      ["5-hour depletion ratio", "statusLineShowSessionDepletionRatio"],
-      ["Weekly depletion ratio", "statusLineShowWeeklyDepletionRatio"],
+      ["Hide weekly limit", "statusLineHideWeeklyLimit"],
+      ["5-hour quota pace", "statusLineShowSessionDepletionRatio"],
+      ["Weekly quota pace", "statusLineShowWeeklyDepletionRatio"],
       ["Subagents inherit parent pin", "subagentsInheritParentPin"],
       ["Autoreviewers (not recommended)", "autoreviewEnabled"],
     ] as const) {
@@ -330,7 +333,7 @@ describe("SettingsServerControlsRouteScreen", () => {
     }
     mocks.readOnly.add("remote");
     act(() => root.render(<SettingsHomuCodeRouteScreen key="read-only" />));
-    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(6);
+    expect(container.querySelectorAll('[role="switch"]:disabled')).toHaveLength(7);
   });
 
   it("sends a draft saved during a pending write once that write settles", async () => {

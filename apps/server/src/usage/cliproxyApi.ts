@@ -43,6 +43,7 @@ export interface CliproxyHub {
 const AuthFile = Schema.Struct({
   id: Schema.String,
   auth_index: Schema.String,
+  quota_account_fingerprint: Schema.optional(Schema.String),
   provider: Schema.String,
   email: Schema.optional(Schema.String),
   disabled: Schema.optional(Schema.Boolean),
@@ -314,7 +315,11 @@ interface HubProvider {
 }
 
 const listedIdentity = (account: AuthFile) => ({
+  ...(account.auth_index.trim() ? { authIndex: account.auth_index.trim() } : {}),
   ...(account.email ? { email: account.email } : {}),
+  ...(account.quota_account_fingerprint?.trim()
+    ? { quotaAccountFingerprint: account.quota_account_fingerprint.trim() }
+    : {}),
   ...(account.id_token?.chatgpt_account_id?.trim()
     ? { workspaceId: account.id_token.chatgpt_account_id.trim() }
     : {}),

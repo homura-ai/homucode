@@ -1,6 +1,12 @@
+import { Link } from "@tanstack/react-router";
 import { useGT } from "gt-react";
 import { createPresenceFlag } from "./presenceFlag";
-import { isManagedSettingPath, ThreadId, type EnvironmentId } from "@t3tools/contracts";
+import {
+  isManagedSettingPath,
+  ThreadId,
+  type EnvironmentId,
+  type StatusLineRenderResult,
+} from "@t3tools/contracts";
 import {
   type AnsiSegment,
   buildStatusLineInput,
@@ -345,7 +351,7 @@ function StatusLineRow(props: {
   );
 }
 
-function useStatusLineBurnSmoothing(environmentId: EnvironmentId) {
+function useStatusLineQuotaSettings(environmentId: EnvironmentId) {
   const config = serverEnvironment.configValueAtom(environmentId);
   const statusLineSessionBurnTauMinutes = useAtomValue(
     config,
@@ -355,7 +361,45 @@ function useStatusLineBurnSmoothing(environmentId: EnvironmentId) {
     config,
     (value) => value?.settings.statusLineWeeklyBurnTauMinutes,
   );
-  return { statusLineSessionBurnTauMinutes, statusLineWeeklyBurnTauMinutes };
+  const statusLineSessionTargetPercentPerHour = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineSessionTargetPercentPerHour,
+  );
+  const statusLineWeeklyTargetPercentPerHour = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineWeeklyTargetPercentPerHour,
+  );
+  const statusLineSessionRateEstimator = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineSessionRateEstimator,
+  );
+  const statusLineWeeklyRateEstimator = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineWeeklyRateEstimator,
+  );
+  const statusLineAccountNames = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineAccountNames,
+  );
+  const showSessionDepletionRatio = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineShowSessionDepletionRatio !== false,
+  );
+  const showWeeklyDepletionRatio = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineShowWeeklyDepletionRatio !== false,
+  );
+  return {
+    statusLineSessionBurnTauMinutes,
+    statusLineWeeklyBurnTauMinutes,
+    statusLineSessionTargetPercentPerHour,
+    statusLineWeeklyTargetPercentPerHour,
+    statusLineSessionRateEstimator,
+    statusLineWeeklyRateEstimator,
+    statusLineAccountNames,
+    showSessionDepletionRatio,
+    showWeeklyDepletionRatio,
+  };
 }
 
 /** Runs the environment's status line command for a thread, the way Claude Code draws its status line. */
@@ -380,13 +424,9 @@ export function ThreadStatusLineRunner(props: {
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.settings.statusLineHideSessionLimit === true,
   );
-  const showSessionDepletionRatio = useAtomValue(
+  const hideWeeklyLimit = useAtomValue(
     serverEnvironment.configValueAtom(environmentId),
-    (config) => config?.settings.statusLineShowSessionDepletionRatio === true,
-  );
-  const showWeeklyDepletionRatio = useAtomValue(
-    serverEnvironment.configValueAtom(environmentId),
-    (config) => config?.settings.statusLineShowWeeklyDepletionRatio === true,
+    (config) => config?.settings.statusLineHideWeeklyLimit === true,
   );
   const accountingSupported = useAtomValue(
     serverEnvironment.configValueAtom(environmentId),
@@ -401,20 +441,54 @@ export function ThreadStatusLineRunner(props: {
       : emptyAccountingAtom,
     (result) => AsyncResult.getOrElse(result, () => null),
   );
+  const config = serverEnvironment.configValueAtom(environmentId);
+  const statusLineBarOrder = useAtomValue(config, (value) => value?.settings.statusLineBarOrder);
+  const statusLineCustomBars = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineCustomBars,
+  );
+  const metricsKey = useAtomValue(config, (value) => {
+    if (value?.environment.capabilities.statusLineCustomBars !== true) return "";
+    const bars = value.settings.statusLineCustomBars.filter((bar) => bar.visible);
+    const command = bars.some((bar) => bar.source.type === "metric")
+      ? value.settings.statusLineMetricsCommand
+      : "";
+    const anchors = bars.flatMap((bar) =>
+      bar.source.type === "usage" && bar.source.window.kind === "command"
+        ? [[bar.id, bar.source.window.command]]
+        : [],
+    );
+    return command || anchors.length ? JSON.stringify([command, anchors]) : "";
+  });
   const registry = useContext(RegistryContext);
   // Limits are read on the minute so the key, and with it the command, only changes on new data.
   const source = {
     ...props.source,
     nowMs: useNowMinuteMs(),
     hideSessionLimit,
-    showSessionDepletionRatio,
-    showWeeklyDepletionRatio,
+    hideWeeklyLimit,
     accounting,
-    ...useStatusLineBurnSmoothing(environmentId),
+    ...useStatusLineQuotaSettings(environmentId),
   };
   // Only the mode in use reads the thread's state; the other key stays empty.
   const inputKey = custom ? JSON.stringify(buildStatusLineInput(source)) : "";
-  const statsKey = custom ? "" : JSON.stringify(buildStatusLineStats(source));
+  const metricsResult = useStatusLineMetrics(
+    enabled && !custom ? metricsKey : "",
+    source,
+    environmentId,
+    createdAt,
+  );
+  const statsKey = custom
+    ? ""
+    : JSON.stringify(
+        buildStatusLineStats({
+          ...source,
+          statusLineCustomBars,
+          statusLineBarOrder,
+          statusLineMetrics: metricsResult?.metrics,
+          customStarts: metricsResult?.customStarts,
+        }),
+      );
   const modelName = statusLineInputModelName(props.source);
   const resultAtom = statusLineResultAtom(props.statusLineKey);
 
@@ -480,6 +554,59 @@ export function ThreadStatusLineRunner(props: {
   ]);
 
   return null;
+}
+
+function useStatusLineMetrics(
+  command: string,
+  source: StatusLineInputSource,
+  environmentId: EnvironmentId,
+  createdAt: string | null,
+): Pick<StatusLineRenderResult, "metrics" | "customStarts"> | undefined {
+  const registry = useContext(RegistryContext);
+  const { threadId } = source;
+  const inputKey = command === "" ? "" : JSON.stringify(buildStatusLineInput(source));
+  const [sample, setSample] = useState<{
+    readonly command: string;
+    readonly environmentId: EnvironmentId;
+    readonly threadId: string;
+    readonly result: Pick<StatusLineRenderResult, "metrics" | "customStarts"> | undefined;
+  } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls the configured metric command while the tab is visible
+  useEffect(() => {
+    if (command === "") return;
+    let cancelled = false;
+    let timer: number;
+    const draw = async () => {
+      if (document.visibilityState !== "hidden") {
+        const input = stampStatusLineInput(JSON.parse(inputKey), createdAt, Date.now());
+        const response = await runAtomCommand(
+          registry,
+          serverEnvironment.renderStatusLine,
+          { environmentId, input: { input, mode: "metrics" } },
+          { reportFailure: false },
+        );
+        if (cancelled) return;
+        setSample({
+          command,
+          environmentId,
+          threadId,
+          result: response._tag === "Success" ? response.value : undefined,
+        });
+      }
+      timer = window.setTimeout(() => void draw(), REFRESH_MS);
+    };
+    timer = window.setTimeout(() => void draw(), DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [command, inputKey, createdAt, environmentId, registry, threadId]);
+  return command !== "" &&
+    sample?.command === command &&
+    sample.environmentId === environmentId &&
+    sample.threadId === threadId
+    ? sample.result
+    : undefined;
 }
 
 // Under the top bar, which is the positioned ancestor. The strip before it bridges the gap above,
@@ -572,8 +699,8 @@ function HeaderStatusLine(props: {
   useLayoutEffect(() => keepBodyFont(containerRef.current));
   const drawn = "stats" in result;
   const failed = !drawn && result.lines.length === 0;
-  const smoothing = useStatusLineBurnSmoothing(result.environmentId);
-  const usage = showAllModels && props.usage ? { ...props.usage, ...smoothing, nowMs } : null;
+  const quotaSettings = useStatusLineQuotaSettings(result.environmentId);
+  const usage = showAllModels && props.usage ? { ...props.usage, ...quotaSettings, nowMs } : null;
   const measure = (line: HTMLElement) => {
     const bar = line.offsetParent?.getBoundingClientRect().left ?? 0;
     setLeft(line.getBoundingClientRect().left - bar);
@@ -647,6 +774,16 @@ function HeaderStatusLine(props: {
               </div>
             )}
             {usage === null ? null : <StatusLineModelUsage source={usage} />}
+            <div className="mt-3 border-t pt-2">
+              <Link
+                to="/settings/agent-behavior"
+                search={{ machine: result.environmentId }}
+                hash="status-line"
+                className="text-xs text-foreground underline underline-offset-2"
+              >
+                {gt("Status line settings")}
+              </Link>
+            </div>
           </div>
         </div>
       ) : null}

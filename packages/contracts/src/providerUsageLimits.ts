@@ -18,6 +18,12 @@ export const UsageBurnRateInterval = Schema.Struct({
 });
 export type UsageBurnRateInterval = typeof UsageBurnRateInterval.Type;
 
+export const UsageMeterPoint = Schema.Struct({
+  atMs: Schema.Finite,
+  usedPercent: UsageBurnRateValue,
+});
+export type UsageMeterPoint = typeof UsageMeterPoint.Type;
+
 /** Stable per-provider ids let sparse updates merge with full probes. */
 export const ServerProviderUsageWindow = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -31,6 +37,25 @@ export const ServerProviderUsageWindow = Schema.Struct({
   windowDurationMins: Schema.optional(NonNegativeInt),
   burnRatePercentPerSecond: Schema.optional(UsageBurnRateValue),
   burnRateInterval: Schema.optionalKey(UsageBurnRateInterval),
+  burnRateSampledAtMs: Schema.optionalKey(Schema.Finite),
+  meterHistory: Schema.optionalKey(Schema.Array(UsageMeterPoint)),
+  homuCoverageStartMs: Schema.optionalKey(Schema.Finite),
+  homuCharges: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        atMs: Schema.Finite,
+        percent: UsageBurnRateValue,
+        model: TrimmedNonEmptyString,
+      }),
+    ),
+  ),
+  burnEstimate: Schema.optionalKey(
+    Schema.Struct({
+      checkpointAtMs: Schema.Finite,
+      homuUsedPercent: UsageBurnRateValue,
+      unexplainedRatePercentPerSecond: UsageBurnRateValue,
+    }),
+  ),
 });
 export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
 
@@ -86,6 +111,8 @@ export type ProviderUsageLimitsUpdate = typeof ProviderUsageLimitsUpdate.Type;
 export const UsageLimitSourceAccount = Schema.Struct({
   id: TrimmedNonEmptyString,
   driver: ProviderDriverKind,
+  authIndex: Schema.optionalKey(TrimmedNonEmptyString),
+  quotaAccountFingerprint: Schema.optionalKey(TrimmedNonEmptyString),
   email: Schema.optional(TrimmedNonEmptyString),
   plan: Schema.optional(TrimmedNonEmptyString),
   workspaceId: Schema.optional(TrimmedNonEmptyString),

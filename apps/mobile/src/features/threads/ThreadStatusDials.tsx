@@ -4,6 +4,7 @@ import {
   STATUS_LINE_EFFORT_COLORS,
   statusLineCacheRisk,
   statusLineQuotaColorPercent,
+  orderStatusLineBars,
   statusLineColorMix,
   statusLineEffortPosition,
   statusLineNativeColorMix,
@@ -19,7 +20,7 @@ import {
 import { statusLineUsageColor } from "@t3tools/shared/themeColors";
 import Constants from "expo-constants";
 import { useGT } from "gt-react-native";
-import { useContext, type ReactNode } from "react";
+import { Fragment, useContext, type ReactNode } from "react";
 import { View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 
@@ -193,7 +194,7 @@ function LimitDial(props: {
   const depletionRatio =
     depletionRatioPercent === undefined
       ? null
-      : gt("Reset / depletion {percent}%", { percent: depletionRatioPercent });
+      : gt("Quota pace {percent}%", { percent: depletionRatioPercent });
   return (
     <Dial
       percent={remainingPercent}
@@ -309,7 +310,7 @@ export function ThreadStatusDialStrip(props: {
     return {
       width: 38 + content,
       ratioWidth:
-        countdown === null || limit.depletionRatioPercent === undefined
+        limit.depletionRatioPercent === undefined
           ? null
           : Math.max(0, textWidth(`${caption} ${limit.depletionRatioPercent}%`) - content),
     };
@@ -323,6 +324,11 @@ export function ThreadStatusDialStrip(props: {
         : Math.max(0, textWidth(caption) - textWidth(context));
   const weeklyLimits =
     stats.weekly === null ? stats.weeklyAccounts : [{ ...stats.weekly, id: "weekly", label: null }];
+  const customBars = (stats.customBars ?? []).map((bar) => ({
+    bar,
+    id: `custom:${bar.id}` as const,
+    width: limitWidth(bar, bar.label),
+  }));
   const weeklyCaption = (label: string | null, compact: boolean) =>
     (compact ? compactWeeklyLabel : weeklyLabel) + (label === null ? "" : ` · ${label}`);
   const layout = fitMobileStatusDials({
@@ -342,6 +348,7 @@ export function ThreadStatusDialStrip(props: {
     })),
     fiveHour: stats.fiveHour === null ? null : limitWidth(stats.fiveHour, "5h"),
     extras: [
+      ...customBars.map(({ id, width }) => ({ id, full: width.width })),
       ...item("cost", threadWeeklyUsage),
       ...item("uptime", uptime, 16),
       ...item("cache", stats.cachePercent === null ? null : "100%", 16),
@@ -400,24 +407,46 @@ export function ThreadStatusDialStrip(props: {
           {contextCaption} {context}
         </Text>
       )}
-      {stats.fiveHour === null || !layout.fiveHour ? null : (
-        <LimitDial
-          limit={stats.fiveHour}
-          nowMs={nowMs}
-          title={gt("5-hour limit")}
-          caption="5h"
-          showDepletionRatio={layout.fiveHourRatio}
-        />
-      )}
-      {weeklyLimits.slice(0, layout.weeklyCount).map((limit) => (
-        <LimitDial
-          key={limit.id}
-          limit={limit}
-          nowMs={nowMs}
-          title={gt("Weekly limit") + (limit.label === null ? "" : ` · ${limit.label}`)}
-          caption={weeklyCaption(limit.label, compact)}
-          showDepletionRatio={layout.weeklyRatio}
-        />
+      {orderStatusLineBars(
+        [
+          {
+            id: "session",
+            nodes:
+              stats.fiveHour === null || !layout.fiveHour ? null : (
+                <LimitDial
+                  limit={stats.fiveHour}
+                  nowMs={nowMs}
+                  title={gt("5-hour limit")}
+                  caption="5h"
+                  showDepletionRatio={layout.fiveHourRatio}
+                />
+              ),
+          },
+          {
+            id: "weekly",
+            nodes: weeklyLimits
+              .slice(0, layout.weeklyCount)
+              .map((limit) => (
+                <LimitDial
+                  key={limit.id}
+                  limit={limit}
+                  nowMs={nowMs}
+                  title={gt("Weekly limit") + (limit.label === null ? "" : ` · ${limit.label}`)}
+                  caption={weeklyCaption(limit.label, compact)}
+                  showDepletionRatio={layout.weeklyRatio}
+                />
+              )),
+          },
+          ...customBars.map(({ id, bar }) => ({
+            id,
+            nodes: !visible.has(id) ? null : (
+              <LimitDial limit={bar} nowMs={nowMs} title={bar.label} caption={bar.label} />
+            ),
+          })),
+        ],
+        stats.barOrder,
+      ).map(({ id, nodes }) => (
+        <Fragment key={id}>{nodes}</Fragment>
       ))}
       {threadWeeklyUsage === null || !visible.has("cost") ? null : (
         <View
@@ -579,7 +608,7 @@ function LimitFact(props: {
             ]),
         ...(depletionRatioPercent === undefined
           ? []
-          : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
+          : [gt("Quota pace {percent}%", { percent: depletionRatioPercent })]),
       ]}
     >
       <Text style={{ color: textColor }}>
@@ -631,19 +660,39 @@ export function ThreadStatusDialDetails(props: {
               : ` / ${formatStatusLineTokens(stats.contextMaxTokens)}`}
           </Fact>
         )}
-        {stats.fiveHour === null ? null : (
-          <LimitFact name={gt("5-hour limit")} limit={stats.fiveHour} nowMs={nowMs} />
-        )}
-        {stats.weekly === null ? null : (
-          <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
-        )}
-        {stats.weeklyAccounts.map((limit) => (
-          <LimitFact
-            key={limit.id}
-            name={`${gt("Weekly limit")} · ${limit.label}`}
-            limit={limit}
-            nowMs={nowMs}
-          />
+        {orderStatusLineBars(
+          [
+            {
+              id: "session",
+              nodes:
+                stats.fiveHour === null ? null : (
+                  <LimitFact name={gt("5-hour limit")} limit={stats.fiveHour} nowMs={nowMs} />
+                ),
+            },
+            {
+              id: "weekly",
+              nodes:
+                stats.weekly === null ? (
+                  stats.weeklyAccounts.map((limit) => (
+                    <LimitFact
+                      key={limit.id}
+                      name={gt("Weekly limit") + (limit.label === null ? "" : ` · ${limit.label}`)}
+                      limit={limit}
+                      nowMs={nowMs}
+                    />
+                  ))
+                ) : (
+                  <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
+                ),
+            },
+            ...(stats.customBars ?? []).map((bar) => ({
+              id: `custom:${bar.id}`,
+              nodes: <LimitFact name={bar.label} limit={bar} nowMs={nowMs} />,
+            })),
+          ],
+          stats.barOrder,
+        ).map(({ id, nodes }) => (
+          <Fragment key={id}>{nodes}</Fragment>
         ))}
         {threadWeeklyUsage === null ? null : (
           <Fact

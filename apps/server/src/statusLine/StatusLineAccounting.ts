@@ -12,16 +12,28 @@ import {
 import {
   resolveLimitAccountMetadata,
   usageLimitSourceAtEndpoint,
+  statusLineAccountKey,
+  weeklyAllowanceUsd,
 } from "@t3tools/shared/usageLimits";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as UsageLimitSources from "../usage/UsageLimitSources.ts";
 import * as UsageService from "../usage/UsageService.ts";
 import type { PricedRecord, PricedUsage } from "../usage/usagePricing.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import {
+  createStatusLineUsageLedgerCache,
+  readStatusLineUsageLedger,
+  statusLineExecutionPriceRecord,
+} from "./StatusLineUsageLedger.ts";
 
 export class StatusLineAccounting extends Context.Reference<{
   readonly read: (input: StatusLineAccountingInput) => Effect.Effect<Accounting | null>;
@@ -46,18 +58,6 @@ function subscriptionShare(provider: "codex" | "claude", plan: string | undefine
   return null;
 }
 
-// API-equivalent dollars per full weekly allowance, measured on pbox in November 2026.
-function weeklyAllowanceUsd(provider: "codex" | "claude", plan: string | undefined, model: string) {
-  if (provider === "codex") {
-    if (plan === "ChatGPT Pro 100 Subscription") return 489;
-    if (plan === "ChatGPT Edu Plus Subscription") return 64;
-  } else if (plan === "Ultra" || plan === "Claude Ultra Subscription") {
-    if (/(?:^|[-/])fable(?:-|$)/i.test(model)) return 811;
-    if (/(?:^|[-/])(?:opus|sonnet|haiku)(?:-|$)/i.test(model)) return 1447;
-  }
-  return null;
-}
-
 interface StatusLinePlans {
   readonly weekly: readonly (string | undefined)[];
   readonly legacy: string | undefined;
@@ -76,19 +76,58 @@ export function statusLineProxyPlans(
   const { resolveKey, plans } = resolveLimitAccountMetadata(providers, sources, hub);
   const accounts = hub.accounts.filter((account) => account.driver === provider.driver);
   const legacy = accounts[0]?.plan;
-  const weekly = accounts.map((account) => {
-    const key = resolveKey(account);
-    const plan = (key === null ? undefined : plans.get(key)?.plan) ?? account.plan;
-    return account.driver === "claudeAgent" &&
-      plan === "Claude Subscription" &&
-      hub.claudeUltra === true
-      ? "Claude Ultra Subscription"
-      : plan;
-  });
+  const weekly = accounts.map((account) =>
+    resolveStatusLineAccountPlan(account, resolveKey, plans, hub),
+  );
   return {
     weekly: [...new Set(weekly)],
     legacy: accounts.every((account) => account.plan === legacy) ? legacy : undefined,
   };
+}
+
+function resolveStatusLineAccountPlan(
+  account: UsageLimitSourceSnapshot["accounts"][number],
+  resolveKey: ReturnType<typeof resolveLimitAccountMetadata>["resolveKey"],
+  plans: ReturnType<typeof resolveLimitAccountMetadata>["plans"],
+  hub: UsageLimitSourceSnapshot,
+) {
+  const key = resolveKey(account);
+  const plan = (key === null ? undefined : plans.get(key)?.plan) ?? account.plan;
+  return account.driver === "claudeAgent" &&
+    plan === "Claude Subscription" &&
+    hub.claudeUltra === true
+    ? "Claude Ultra Subscription"
+    : plan;
+}
+
+export function summarizeStatusLineAccountUsage(
+  provider: "codex" | "claude",
+  records: ReadonlyArray<{
+    readonly accountId: string;
+    readonly label: string | null;
+    readonly plan: string | undefined;
+    readonly model: string;
+  }>,
+  prices: readonly PricedUsage[],
+) {
+  const byId = new Map<string, { id: string; label: string | null; percent: number }>();
+  let partial = false;
+  for (const [index, record] of records.entries()) {
+    const price = prices[index];
+    const allowance = weeklyAllowanceUsd(provider, record.plan, record.model);
+    if (!price || price.costSource === "unpriced" || allowance === null) {
+      partial = true;
+      continue;
+    }
+    const percent = (100 * price.costUsd) / allowance;
+    const previous = byId.get(record.accountId);
+    byId.set(record.accountId, {
+      id: record.accountId,
+      label: record.label,
+      percent: (previous?.percent ?? 0) + percent,
+    });
+  }
+  return { weeklyUsageByAccount: [...byId.values()], partial };
 }
 
 export function summarizeStatusLineCost(
@@ -184,6 +223,10 @@ const make = Effect.gen(function* () {
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const hubs = yield* UsageLimitSources.UsageLimitSources;
   const usage = yield* UsageService.UsageService;
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const ledgerCache = createStatusLineUsageLedgerCache();
 
   return {
     read: Effect.fn("StatusLineAccounting.read")(
@@ -203,10 +246,23 @@ const make = Effect.gen(function* () {
         if (driver !== "codex" && driver !== "claudeAgent") return null;
         const snapshots = yield* providers.getProviders;
         const provider = snapshots.find((entry) => entry.instanceId === active?.providerInstanceId);
+        const sources = yield* hubs.current;
+        const endpoint = provider?.auth.endpoint;
+        const hub =
+          endpoint === undefined
+            ? undefined
+            : usageLimitSourceAtEndpoint(sources, endpoint, {
+                useProviderRoute: driver === "claudeAgent",
+              });
         const plans =
-          provider?.auth.endpoint === undefined
+          endpoint === undefined
             ? { weekly: [provider?.auth.label], legacy: provider?.auth.label }
-            : statusLineProxyPlans(provider, snapshots, yield* hubs.current);
+            : {
+                weekly: [],
+                legacy: provider
+                  ? statusLineProxyPlans(provider, snapshots, sources).legacy
+                  : undefined,
+              };
 
         const turns = providerTurns.filter(
           (turn) =>
@@ -266,8 +322,96 @@ const make = Effect.gen(function* () {
         const prices = yield* usage
           .priceRecords(kind, records)
           .pipe(Effect.orElseSucceed(() => []));
+        const base = summarizeStatusLineCost(kind, plans, records, prices, partial);
+        if (endpoint === undefined) return { ...base, apiDurationMs, outputStyle };
+        const currentSettings = yield* settings.getSettings;
+        const directory =
+          hub && !hub.error ? currentSettings.usageLimitSources[hub.id]?.usageLedgerDir : undefined;
+        const nativeThreadId = active?.nativeThreadRef?.nativeId?.toLowerCase();
+        if (!directory || !hub || !nativeThreadId) {
+          return { ...base, weeklyUsageByAccount: [], partial: true, apiDurationMs, outputStyle };
+        }
+        const now = yield* Clock.currentTimeMillis;
+        const firstTurn = turns.reduce(
+          (earliest, turn) =>
+            turn.startedAt === null
+              ? earliest
+              : Math.min(earliest, DateTime.toEpochMillis(turn.startedAt)),
+          now,
+        );
+        const executions = yield* readStatusLineUsageLedger(
+          directory,
+          firstTurn,
+          now,
+          ledgerCache,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+        );
+        const { resolveKey, plans: accountPlans } = resolveLimitAccountMetadata(
+          snapshots,
+          sources,
+          hub,
+        );
+        const accounts = new Map(
+          hub.accounts
+            .filter((account) => account.driver === driver && account.authIndex)
+            .map((account) => [account.authIndex, account]),
+        );
+        const matching = executions.filter(
+          (execution) =>
+            execution.thread_id === nativeThreadId &&
+            execution.provider === kind &&
+            !execution.failed,
+        );
+        const seenTurnIds = new Set(matching.map((execution) => execution.turn_id));
+        const priced = matching.flatMap((execution) => {
+          const account = accounts.get(execution.auth_index);
+          const record = statusLineExecutionPriceRecord(execution);
+          if (
+            !account?.quotaAccountFingerprint ||
+            account.quotaAccountFingerprint !== execution.account_fingerprint ||
+            !record
+          )
+            return [];
+          const accountId = statusLineAccountKey(hub.id, account.id);
+          return [
+            {
+              record,
+              accountId,
+              label: currentSettings.statusLineAccountNames[accountId] ?? null,
+              plan: resolveStatusLineAccountPlan(account, resolveKey, accountPlans, hub),
+              model: record.model,
+            },
+          ];
+        });
+        const accountPrices = yield* usage
+          .priceRecords(
+            kind,
+            priced.map(({ record }) => record),
+          )
+          .pipe(Effect.orElseSucceed(() => []));
+        const perAccount = summarizeStatusLineAccountUsage(kind, priced, accountPrices);
+        const missingCodexTurn =
+          kind === "codex" &&
+          turns.some(
+            (turn) =>
+              !turn.turnTokenUsage?.localCommand &&
+              (!turn.nativeTurnRef?.nativeId ||
+                !seenTurnIds.has(turn.nativeTurnRef.nativeId.toLowerCase())),
+          );
         return {
-          ...summarizeStatusLineCost(kind, plans, records, prices, partial),
+          ...base,
+          ...perAccount,
+          partial:
+            perAccount.partial ||
+            priced.length !== matching.length ||
+            matching.length === 0 ||
+            missingCodexTurn ||
+            (kind === "claude" &&
+              base.apiCostUsd !== null &&
+              accountPrices.reduce((total, price) => total + price.costUsd, 0) + 0.00001 <
+                base.apiCostUsd),
           apiDurationMs,
           outputStyle,
         };

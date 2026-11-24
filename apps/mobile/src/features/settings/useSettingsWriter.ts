@@ -30,7 +30,8 @@ export function useSettingsWriter() {
           environmentId: entry.environmentId,
           input: { patch: entry.patch },
         });
-        if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return null;
+        if (result._tag !== "Failure") return null;
+        if (isAtomCommandInterrupted(result)) return undefined;
         const label =
           targets.find((target) => target.environment.environmentId === entry.environmentId)
             ?.environment.label ?? entry.environmentId;
@@ -41,9 +42,10 @@ export function useSettingsWriter() {
         });
       }),
     );
-    const failures = outcomes.filter((outcome) => outcome !== null);
+    const failures = outcomes.filter((outcome) => typeof outcome === "string");
     if (failures.length > 0) {
       Dialog.alert(gt("Could not save settings"), failures.join("\n\n"));
     }
+    return outcomes.every((outcome) => outcome === null);
   };
 }

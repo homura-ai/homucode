@@ -4,6 +4,9 @@ import type {
   ServerProviderModel,
   ServerProviderUsageWindow,
   StatusLineAccounting,
+  StatusLineCustomBar,
+  StatusLineMetricValues,
+  StatusLineRateEstimator,
   UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import {
@@ -17,15 +20,15 @@ import {
   remainingPercent,
   resolveLimitAccountMetadata,
   smoothUsageBurnRate,
+  statusLineAccountKey,
+  statusLineWindowModels,
   usageLimitSourceAtEndpoint,
   usageWindowForForecast,
+  weeklyAllowanceUsd,
 } from "@t3tools/shared/usageLimits";
 
 import type { ContextWindowSnapshot } from "./state/contextWindow.ts";
-import {
-  providerInstanceInitials,
-  resolveProviderInstanceDisplayName,
-} from "./state/providerInstanceDisplay.ts";
+import { resolveProviderInstanceDisplayName } from "./state/providerInstanceDisplay.ts";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 export interface StatusLineInputSource {
@@ -38,11 +41,21 @@ export interface StatusLineInputSource {
   /** Usage limits are read as of this time. */
   readonly nowMs: number;
   readonly hideSessionLimit?: boolean;
+  readonly hideWeeklyLimit?: boolean;
   readonly showSessionDepletionRatio?: boolean;
   readonly showWeeklyDepletionRatio?: boolean;
   readonly accounting?: StatusLineAccounting | null;
   readonly statusLineSessionBurnTauMinutes?: number | undefined;
   readonly statusLineWeeklyBurnTauMinutes?: number | undefined;
+  readonly statusLineSessionRateEstimator?: StatusLineRateEstimator | undefined;
+  readonly statusLineWeeklyRateEstimator?: StatusLineRateEstimator | undefined;
+  readonly customStarts?: Readonly<Record<string, string>> | undefined;
+  readonly statusLineSessionTargetPercentPerHour?: number | null | undefined;
+  readonly statusLineWeeklyTargetPercentPerHour?: number | null | undefined;
+  readonly statusLineAccountNames?: Readonly<Record<string, string>> | undefined;
+  readonly statusLineBarOrder?: readonly string[] | undefined;
+  readonly statusLineCustomBars?: readonly StatusLineCustomBar[] | undefined;
+  readonly statusLineMetrics?: StatusLineMetricValues | undefined;
 }
 
 export type StatusLineUsageSource = Pick<
@@ -52,11 +65,18 @@ export type StatusLineUsageSource = Pick<
   | "nowMs"
   | "statusLineSessionBurnTauMinutes"
   | "statusLineWeeklyBurnTauMinutes"
+  | "statusLineSessionRateEstimator"
+  | "statusLineWeeklyRateEstimator"
+  | "statusLineSessionTargetPercentPerHour"
+  | "statusLineWeeklyTargetPercentPerHour"
+  | "statusLineAccountNames"
+  | "showSessionDepletionRatio"
+  | "showWeeklyDepletionRatio"
 >;
 
 type StatusLineUsageWindow = ServerProviderUsageWindow & {
   readonly remainingPercent?: number;
-  readonly account?: { readonly key: string; readonly label: string };
+  readonly account?: { readonly key: string; readonly label: string | null };
 };
 
 function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWindow): boolean {
@@ -69,9 +89,60 @@ function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWind
   );
 }
 
+function quotaResetStart(window: ServerProviderUsageWindow): number {
+  const duration =
+    window.windowDurationMins ??
+    (window.kind === "weekly" ? 10_080 : window.kind === "session" ? 300 : 0);
+  return duration <= 0 ? Number.NaN : Date.parse(window.resetsAt ?? "") - duration * 60_000;
+}
+
+function quotaUsedSince(
+  window: ServerProviderUsageWindow,
+  startMs: number,
+  fromReset: boolean,
+): number | null {
+  const resetAtMs = quotaResetStart(window);
+  if (fromReset && startMs === resetAtMs) return window.usedPercent;
+  const history = window.meterHistory;
+  if (!history || history.length === 0 || startMs < history[0]!.atMs) return null;
+  const point = history.findLast(({ atMs }) => atMs > resetAtMs && atMs <= startMs);
+  return point ? Math.max(0, window.usedPercent - point.usedPercent) : null;
+}
+
+function applyRateEstimator(
+  window: ServerProviderUsageWindow,
+  estimator: StatusLineRateEstimator | undefined,
+  nowMs: number,
+): ServerProviderUsageWindow {
+  if (!estimator || estimator.kind === "ema") return window;
+  const startMs =
+    estimator.kind === "reset" ? quotaResetStart(window) : nowMs - estimator.minutes * 60_000;
+  const used = quotaUsedSince(window, startMs, estimator.kind === "reset");
+  return {
+    ...window,
+    burnRatePercentPerSecond:
+      used === null || startMs >= nowMs ? undefined : (used * 1000) / (nowMs - startMs),
+  };
+}
+
 function applyBurnSmoothing(
   window: ServerProviderUsageWindow,
   source: StatusLineUsageSource,
+  estimate: boolean,
+): ServerProviderUsageWindow {
+  const estimator =
+    window.kind === "session"
+      ? source.statusLineSessionRateEstimator
+      : window.kind === "weekly"
+        ? source.statusLineWeeklyRateEstimator
+        : undefined;
+  return applyRateEstimator(smoothBurnRate(window, source, estimate), estimator, source.nowMs);
+}
+
+function smoothBurnRate(
+  window: ServerProviderUsageWindow,
+  source: StatusLineUsageSource,
+  estimate: boolean,
 ): ServerProviderUsageWindow {
   const tauMinutes =
     window.kind === "session"
@@ -79,18 +150,37 @@ function applyBurnSmoothing(
       : window.kind === "weekly"
         ? source.statusLineWeeklyBurnTauMinutes
         : undefined;
-  return tauMinutes === undefined || window.burnRateInterval === undefined
-    ? window
-    : {
-        ...window,
-        burnRatePercentPerSecond: smoothUsageBurnRate(window.burnRateInterval, tauMinutes),
-      };
+  if (tauMinutes === undefined) return window;
+  const measured =
+    window.burnRateInterval === undefined
+      ? window.burnRatePercentPerSecond
+      : smoothUsageBurnRate(window.burnRateInterval, tauMinutes);
+  if (measured === undefined) return window;
+  const tauMs = tauMinutes * 60_000;
+  const sampleTime = window.burnRateSampledAtMs ?? source.nowMs;
+  const aged = measured * Math.exp(-Math.max(0, source.nowMs - sampleTime) / tauMs);
+  const reading = estimate ? window.burnEstimate : undefined;
+  if (!reading) return { ...window, burnRatePercentPerSecond: aged };
+  const elapsedMs = Math.max(0, source.nowMs - reading.checkpointAtMs);
+  const used = Math.min(
+    1,
+    Math.max(0, 100 - window.usedPercent),
+    reading.homuUsedPercent + (reading.unexplainedRatePercentPerSecond * elapsedMs) / 1000,
+  );
+  const estimatedRate =
+    elapsedMs > 0 ? ((used * 1000) / elapsedMs) * -Math.expm1(-elapsedMs / tauMs) : 0;
+  return {
+    ...window,
+    usedPercent: window.usedPercent + used,
+    burnRatePercentPerSecond: aged + estimatedRate,
+  };
 }
 
 function hubUsageWindows(
   provider: ServerProvider,
   source: StatusLineUsageSource,
   includeAll: boolean,
+  estimate: boolean,
 ): ReadonlyArray<StatusLineUsageWindow> {
   const { providers, usageLimitSources: sources, nowMs: now } = source;
   if (!provider.auth.endpoint) return [];
@@ -125,7 +215,7 @@ function hubUsageWindows(
                   Date.parse(window.resetsAt) > now) &&
                 (includeAll || summaryWindow(provider, window)),
             )
-            .map((window) => applyBurnSmoothing(window, source)),
+            .map((window) => applyBurnSmoothing(window, source, estimate)),
         },
       };
     });
@@ -133,16 +223,14 @@ function hubUsageWindows(
   return (
     pool?.windows.flatMap((window): StatusLineUsageWindow[] => {
       if (window.usedPercent === null || window.remainingPercent === null) {
-        const seen = new Map<string, number>();
-        return window.members.map(({ account, window: reported }, index) => {
-          const name = providerInstanceInitials(account.email ?? account.key) || String(index + 1);
-          const count = (seen.get(name) ?? 0) + 1;
-          seen.set(name, count);
-          return {
-            ...usageWindowForForecast(reported, account.driver, account.limits.checkedAt, now),
-            account: { key: account.key, label: count === 1 ? name : `${name}${count}` },
-          };
-        });
+        return window.members.map(({ account, window: reported }) => ({
+          ...usageWindowForForecast(reported, account.driver, account.limits.checkedAt, now),
+          account: {
+            key: account.key,
+            label:
+              source.statusLineAccountNames?.[statusLineAccountKey(hub.id, account.key)] ?? null,
+          },
+        }));
       }
       const resetsAt = window.resets[0]?.member.window.resetsAt;
       const reported = window.members[0]?.window;
@@ -167,20 +255,24 @@ function hubUsageWindows(
   );
 }
 
-function usageWindows(source: StatusLineInputSource): ReadonlyArray<StatusLineUsageWindow> {
+function usageWindows(
+  source: StatusLineInputSource,
+  estimate = true,
+): ReadonlyArray<StatusLineUsageWindow> {
   const instanceId = source.modelSelection?.instanceId;
   const provider = source.providers.find((candidate) => candidate.instanceId === instanceId);
   if (instanceId === undefined || !provider) return [];
-  return providerUsageWindows(provider, source, false);
+  return providerUsageWindows(provider, source, false, estimate);
 }
 
 function providerUsageWindows(
   provider: ServerProvider,
   source: StatusLineUsageSource,
   includeAll: boolean,
+  estimate = true,
 ): ReadonlyArray<StatusLineUsageWindow> {
   const { instanceId } = provider;
-  const hubWindows = hubUsageWindows(provider, source, includeAll);
+  const hubWindows = hubUsageWindows(provider, source, includeAll, estimate);
   const report = collectProviderUsageLimits(
     instanceId,
     source.providers,
@@ -208,7 +300,7 @@ function providerUsageWindows(
       )
       .map((window) =>
         usageWindowForForecast(
-          applyBurnSmoothing(window, source),
+          applyBurnSmoothing(window, source, estimate),
           provider.driver,
           limits?.checkedAt ?? provider.checkedAt,
           source.nowMs,
@@ -229,12 +321,14 @@ export function buildStatusLineModelUsage(source: StatusLineUsageSource) {
         limits: providerUsageWindows(provider, source, true).map((window) => {
           return {
             id: window.account ? JSON.stringify([window.id, window.account.key]) : window.id,
-            label: window.account ? `${window.label} · ${window.account.label}` : window.label,
+            label: window.account?.label
+              ? `${window.label} · ${window.account.label}`
+              : window.label,
             scope: [
               ...(window.modelIds?.map((id) => names.get(id) ?? id) ?? []),
               ...(window.providerIds ?? []),
             ],
-            ...limitFromWindow(window, source.nowMs),
+            ...limitFromWindow(window, source),
           };
         }),
       };
@@ -331,11 +425,38 @@ export interface StatusLineLimit {
   readonly resetsAtMs: number | null;
   readonly usedPercent?: number;
   readonly burnRatePercentPerSecond?: number;
+  /** null colors by remaining quota; absent preserves the 5-hour reset forecast. */
+  readonly targetPercentPerHour?: number | null;
+}
+
+export function orderStatusLineBars<T extends { readonly id: string }>(
+  bars: readonly T[],
+  order: readonly string[] | undefined,
+): readonly T[] {
+  if (!order?.length) return bars;
+  const available = new Map(bars.map((bar) => [bar.id, bar]));
+  const ordered = order.flatMap((id) => {
+    const bar = available.get(id);
+    available.delete(id);
+    return bar === undefined ? [] : [bar];
+  });
+  return [...ordered, ...available.values()];
 }
 
 export function formatStatusLineWeeklyUsage(
   accounting: StatusLineAccounting | null | undefined,
 ): string | null {
+  if (accounting?.weeklyUsageByAccount !== undefined) {
+    if (accounting.weeklyUsageByAccount.length === 0) return null;
+    return (
+      accounting.weeklyUsageByAccount
+        .map(({ label, percent }) => {
+          const value = percent > 0 && percent < 0.01 ? "<0.01%" : `≈${percent.toFixed(2)}%`;
+          return label === null ? value : `${label} ${value}`;
+        })
+        .join(" · ") + (accounting.partial ? "+" : "")
+    );
+  }
   if (accounting?.weeklyUsagePercent === undefined) return null;
   const [minimum, maximum] = accounting.weeklyUsagePercent;
   const lower = minimum.toFixed(2);
@@ -366,6 +487,10 @@ export interface StatusLineStats {
   readonly fiveHour: StatusLineLimit | null;
   readonly weekly: StatusLineLimit | null;
   readonly weeklyAccounts: ReadonlyArray<
+    StatusLineLimit & { readonly id: string; readonly label: string | null }
+  >;
+  readonly barOrder?: readonly string[];
+  readonly customBars?: ReadonlyArray<
     StatusLineLimit & { readonly id: string; readonly label: string }
   >;
   readonly cachePercent: number | null;
@@ -384,12 +509,22 @@ function smoothedBurnToReset(
 
 function limitFromWindow(
   window: StatusLineUsageWindow,
-  nowMs: number,
-  showDepletionRatio = false,
+  source: StatusLineUsageSource,
+  showQuotaPace?: boolean,
 ): StatusLineLimit {
+  const weekly = window.kind === "weekly";
+  const session = window.kind === "session";
+  const showDepletionRatio =
+    showQuotaPace ??
+    ((weekly && source.showWeeklyDepletionRatio) || (session && source.showSessionDepletionRatio));
+  const targetPercentPerHour = weekly
+    ? (source.statusLineWeeklyTargetPercentPerHour ?? null)
+    : session
+      ? (source.statusLineSessionTargetPercentPerHour ?? undefined)
+      : undefined;
   const reset = Date.parse(window.resetsAt ?? "");
   const resetsAtMs = Number.isFinite(reset) ? reset : null;
-  const burn = smoothedBurnToReset(window.burnRatePercentPerSecond, resetsAtMs, nowMs);
+  const burn = smoothedBurnToReset(window.burnRatePercentPerSecond, resetsAtMs, source.nowMs);
   const exactRemaining = 100 - window.usedPercent;
   const depletionRatio =
     showDepletionRatio && burn !== null && exactRemaining > 0
@@ -401,6 +536,7 @@ function limitFromWindow(
     projectedRemainingPercent: burn === null ? null : Math.round(exactRemaining - burn),
     ...(depletionRatio === null ? {} : { depletionRatioPercent: depletionRatio }),
     resetsAtMs,
+    ...(targetPercentPerHour === undefined ? {} : { targetPercentPerHour }),
     ...(window.usedPercent === 100 - remaining ? {} : { usedPercent: window.usedPercent }),
     ...(window.burnRatePercentPerSecond === undefined
       ? {}
@@ -411,11 +547,252 @@ function limitFromWindow(
 function statusLineLimit(
   windows: ReadonlyArray<StatusLineUsageWindow>,
   kind: ServerProviderUsageWindow["kind"],
-  nowMs: number,
-  showDepletionRatio = false,
+  source: StatusLineUsageSource,
 ): StatusLineLimit | null {
   const window = findUsageWindow(windows, kind);
-  return window === undefined ? null : limitFromWindow(window, nowMs, showDepletionRatio);
+  return window === undefined ? null : limitFromWindow(window, source);
+}
+
+type GroupedUsageSource = Extract<StatusLineCustomBar["source"], { type: "usage" }>;
+
+function groupedStatusLineUsage(
+  source: StatusLineInputSource,
+  config: GroupedUsageSource,
+  id: string,
+) {
+  const all = source.usageLimitSources.flatMap((hub) => {
+    if (hub.error) return [];
+    const providers = source.providers.filter(
+      (provider) =>
+        provider.enabled &&
+        provider.auth.endpoint &&
+        usageLimitSourceAtEndpoint(source.usageLimitSources, provider.auth.endpoint, {
+          useProviderRoute: provider.driver === "claudeAgent",
+        })?.id === hub.id,
+    );
+    const { resolveKey, plans } = resolveLimitAccountMetadata(
+      source.providers,
+      source.usageLimitSources,
+      hub,
+    );
+    return hub.accounts.flatMap((account) => {
+      if (account.usageLimits.unavailable) return [];
+      const siblings = providers.filter((provider) => provider.driver === account.driver);
+      const key = resolveKey(account);
+      const plan = (key === null ? undefined : plans.get(key)?.plan) ?? account.plan;
+      const resolvedPlan =
+        account.driver === "claudeAgent" && plan === "Claude Subscription" && hub.claudeUltra
+          ? "Claude Ultra Subscription"
+          : plan;
+      return account.usageLimits.windows.flatMap((window) => {
+        if (window.kind !== "weekly" || Date.parse(window.resetsAt ?? "") <= source.nowMs)
+          return [];
+        const models = statusLineWindowModels(window);
+        const model = models?.[0] ?? "claude-opus";
+        const allowance =
+          account.driver === "codex" || account.driver === "claudeAgent"
+            ? weeklyAllowanceUsd(
+                account.driver === "codex" ? "codex" : "claude",
+                resolvedPlan,
+                model,
+              )
+            : null;
+        return [
+          {
+            key: statusLineAccountKey(hub.id, account.id),
+            providers: siblings,
+            window: smoothBurnRate(window, source, true),
+            models,
+            allowance,
+          },
+        ];
+      });
+    });
+  });
+  const { scope, window: mode, basis } = config;
+  const modelMatches = (model: string) =>
+    scope.kind !== "models" ||
+    scope.models.some((id) => model === id || model.startsWith(id + "-"));
+  const selected = all.filter((option) => {
+    switch (scope.kind) {
+      case "accounts":
+        return scope.accountIds.includes(option.key);
+      case "provider":
+        return option.providers.some(
+          (provider) => provider.instanceId === scope.providerInstanceId,
+        );
+      case "models":
+        return option.models
+          ? option.models.some((prefix) =>
+              scope.models.some((model) => model.startsWith(prefix) || prefix.startsWith(model)),
+            )
+          : option.providers.some((provider) =>
+              provider.models.some(
+                (model) =>
+                  modelMatches(model.slug) &&
+                  !all.some(
+                    (other) =>
+                      other.key === option.key &&
+                      other.models?.some((prefix) => model.slug.startsWith(prefix)),
+                  ),
+              ),
+            );
+    }
+  });
+  if (selected.length === 0) return null;
+  const reset =
+    mode.kind === "reset"
+      ? (all.find((entry) => entry.key === mode.accountId && !entry.models)?.window ??
+        all.find((entry) => entry.key === mode.accountId)?.window)
+      : undefined;
+  const commonStart =
+    mode.kind === "sliding"
+      ? source.nowMs - mode.minutes * 60_000
+      : mode.kind === "command"
+        ? Date.parse(source.customStarts?.[id] ?? "")
+        : reset
+          ? quotaResetStart(reset)
+          : Number.NaN;
+  let allowanceTotal = 0;
+  let usageUsd = 0;
+  let burnUsd = 0;
+  let rateAvailable = false;
+  for (const { window, allowance } of selected) {
+    if (allowance === null) return null;
+    const start = mode.kind === "ema" ? quotaResetStart(window) : commonStart;
+    if (!Number.isFinite(start) || start >= source.nowMs) return null;
+    const elapsedSeconds = (source.nowMs - start) / 1000;
+    const charges = window.homuCharges?.filter(
+      ({ atMs, model }) => atMs >= start && atMs <= source.nowMs && modelMatches(model),
+    );
+    if (
+      basis === "homucode" &&
+      (!charges ||
+        start < quotaResetStart(window) ||
+        window.homuCoverageStartMs === undefined ||
+        start < window.homuCoverageStartMs)
+    )
+      return null;
+    const used =
+      basis === "homucode"
+        ? charges!.reduce((total, charge) => total + charge.percent, 0)
+        : quotaUsedSince(window, start, mode.kind === "reset" || mode.kind === "ema");
+    if (used === null) return null;
+    const tauSeconds = (source.statusLineWeeklyBurnTauMinutes ?? 1_440) * 60;
+    const rate =
+      mode.kind !== "ema"
+        ? used / elapsedSeconds
+        : basis === "percentages"
+          ? window.burnRatePercentPerSecond
+          : charges!.reduce(
+              (total, charge) =>
+                total +
+                (charge.percent / tauSeconds) *
+                  Math.exp(-(source.nowMs - charge.atMs) / (1000 * tauSeconds)),
+              0,
+            );
+    allowanceTotal += allowance;
+    usageUsd += used * allowance;
+    if (rate !== undefined) {
+      rateAvailable = true;
+      burnUsd += rate * allowance;
+    }
+  }
+  return {
+    usedPercent: clampPercent(usageUsd / allowanceTotal),
+    ...(reset?.resetsAt === undefined ? {} : { resetsAt: reset.resetsAt }),
+    ...(rateAvailable ? { burnRatePercentPerSecond: burnUsd / allowanceTotal } : {}),
+  };
+}
+
+function customStatusLineBars(
+  source: StatusLineInputSource,
+): NonNullable<StatusLineStats["customBars"]> {
+  const bars = source.statusLineCustomBars?.filter((bar) => bar.visible) ?? [];
+  const providerIds = new Set(
+    bars.flatMap(({ source: bar }) => (bar.type === "quota" ? [bar.providerInstanceId] : [])),
+  );
+  const usage = buildStatusLineModelUsage({
+    ...source,
+    providers: source.providers.filter((provider) => providerIds.has(provider.instanceId)),
+  });
+  return bars.flatMap(
+    ({ id, label, targetPercentPerHour, estimator, showQuotaPace, source: bar }) => {
+      if (bar.type === "usage") {
+        const reading = groupedStatusLineUsage(source, bar, id);
+        return reading === null
+          ? []
+          : [
+              {
+                ...limitFromWindow({ id, label, kind: "other", ...reading }, source, showQuotaPace),
+                id,
+                label,
+                targetPercentPerHour,
+              },
+            ];
+      }
+      if (bar.type === "quota") {
+        const quotaOptions =
+          estimator === undefined
+            ? usage
+            : buildStatusLineModelUsage({
+                ...source,
+                statusLineSessionRateEstimator: estimator,
+                statusLineWeeklyRateEstimator: estimator,
+                providers: source.providers.filter(
+                  (provider) => provider.instanceId === bar.providerInstanceId,
+                ),
+              });
+        const limit = quotaOptions
+          .find(({ instanceId }) => instanceId === bar.providerInstanceId)
+          ?.limits.find((limit) => limit.id === bar.limitId);
+        if (limit === undefined) return [];
+        const { depletionRatioPercent: _pace, ...reading } = limit;
+        const remaining = 100 - (reading.usedPercent ?? 100 - reading.remainingPercent);
+        const burn = smoothedBurnToReset(
+          reading.burnRatePercentPerSecond,
+          reading.resetsAtMs,
+          source.nowMs,
+        );
+        return [
+          {
+            ...reading,
+            id,
+            label,
+            targetPercentPerHour,
+            ...(showQuotaPace && burn !== null && remaining > 0
+              ? { depletionRatioPercent: Math.round((100 * burn) / remaining) }
+              : {}),
+          },
+        ];
+      }
+      const metrics = source.statusLineMetrics;
+      const metric = metrics && Object.hasOwn(metrics, bar.key) ? metrics[bar.key] : undefined;
+      if (metric === undefined) return [];
+      return [
+        {
+          ...limitFromWindow(
+            {
+              id,
+              label,
+              kind: "other",
+              usedPercent: 100 - metric.remainingPercent,
+              remainingPercent: metric.remainingPercent,
+              ...(metric.resetsAt === undefined ? {} : { resetsAt: metric.resetsAt }),
+              ...(metric.burnRatePercentPerHour === undefined
+                ? {}
+                : { burnRatePercentPerSecond: metric.burnRatePercentPerHour / 3_600 }),
+            },
+            source,
+            showQuotaPace,
+          ),
+          id,
+          label,
+          targetPercentPerHour,
+        },
+      ];
+    },
+  );
 }
 
 /** The same facts `buildStatusLineInput` gives a script, typed for a client to draw. */
@@ -423,7 +800,8 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
   const { selection, provider, model } = selectedModel(source);
   const context = source.contextWindow;
   const windows = usageWindows(source);
-  const weekly = statusLineLimit(windows, "weekly", source.nowMs, source.showWeeklyDepletionRatio);
+  const weekly = source.hideWeeklyLimit ? null : statusLineLimit(windows, "weekly", source);
+  const customBars = source.statusLineCustomBars?.length ? customStatusLineBars(source) : [];
   const inputTokens = context?.inputTokens ?? null;
   const cachedInputTokens = context?.cachedInputTokens ?? null;
   return {
@@ -443,12 +821,10 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
       context === null || context.usedPercentage === null ? null : context.usedPercentage,
     contextTokens: context?.usedTokens ?? null,
     contextMaxTokens: context?.maxTokens ?? null,
-    fiveHour: source.hideSessionLimit
-      ? null
-      : statusLineLimit(windows, "session", source.nowMs, source.showSessionDepletionRatio),
+    fiveHour: source.hideSessionLimit ? null : statusLineLimit(windows, "session", source),
     weekly,
     weeklyAccounts:
-      weekly !== null
+      weekly !== null || source.hideWeeklyLimit === true
         ? []
         : windows.flatMap((window) =>
             window.kind === "weekly" && window.account
@@ -456,11 +832,13 @@ export function buildStatusLineStats(source: StatusLineInputSource): StatusLineS
                   {
                     id: JSON.stringify([window.id, window.account.key]),
                     label: window.account.label,
-                    ...limitFromWindow(window, source.nowMs, source.showWeeklyDepletionRatio),
+                    ...limitFromWindow(window, source),
                   },
                 ]
               : [],
           ),
+    ...(source.statusLineBarOrder?.length ? { barOrder: source.statusLineBarOrder } : {}),
+    ...(customBars.length === 0 ? {} : { customBars }),
     cachePercent:
       inputTokens !== null && inputTokens > 0 && cachedInputTokens !== null
         ? 100 * Math.min(1, cachedInputTokens / inputTokens)
@@ -521,22 +899,31 @@ export function statusLineBurnRisk(limit: StatusLineLimit, nowMs: number): numbe
   if (used >= 100) return 100;
   const burn = smoothedBurnToReset(limit.burnRatePercentPerSecond, limit.resetsAtMs, nowMs);
   if (burn === null) return 0;
-  const depletionRatio = burn / (100 - used);
+  return burnRiskAtRatio(burn / (100 - used));
+}
+
+function burnRiskAtRatio(ratio: number): number {
   // The extra term keeps the first half and its slope at 1×, and raises 2× to 90 risk.
-  const excess = Math.max(0, depletionRatio - 1);
-  const odds = depletionRatio ** 2 * (1 + 1.25 * excess ** 2);
+  const excess = Math.max(0, ratio - 1);
+  const odds = ratio ** 2 * (1 + 1.25 * excess ** 2);
   return 100 / (1 + 1 / odds);
 }
 
 export function statusLineQuotaColorPercent(limit: StatusLineLimit, nowMs: number): number {
+  const target = limit.targetPercentPerHour;
+  const rate = limit.burnRatePercentPerSecond;
+  if (target != null && rate !== undefined) {
+    return limit.remainingPercent <= 0 ? 100 : burnRiskAtRatio((rate * 3_600) / target);
+  }
   if (
+    target === undefined &&
     limit.resetsAtMs !== null &&
     limit.resetsAtMs > nowMs &&
     limit.burnRatePercentPerSecond !== undefined
   ) {
     return statusLineBurnRisk(limit, nowMs);
   }
-  return clampPercent(100 - limit.remainingPercent);
+  return clampPercent(limit.usedPercent ?? 100 - limit.remainingPercent);
 }
 
 export function statusLineUsageHue(percent: number): number {
@@ -595,6 +982,11 @@ export function parseStatusLineBurnTau(input: string): number | null {
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
+export function parseStatusLineTargetRate(input: string): number | null | undefined {
+  if (input.trim() === "") return null;
+  return parseStatusLineBurnTau(input) ?? undefined;
+}
+
 export function statusLineGaugeTickRotation(percent: number): number {
   return statusLineGaugePercent(percent) * 3.6;
 }
@@ -643,7 +1035,7 @@ export function buildStatusLineInput(source: StatusLineInputSource): Record<stri
   const effort = effortLevel(selection, model);
   const fastMode = getModelSelectionBooleanOptionValue(selection, "fastMode");
   const context = source.contextWindow;
-  const windows = usageWindows(source);
+  const windows = usageWindows(source, false);
   const accounting = source.accounting;
   const cost = {
     ...(accounting?.apiCostUsd == null || accounting.partial

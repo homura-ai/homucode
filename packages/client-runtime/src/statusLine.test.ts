@@ -447,6 +447,7 @@ describe("buildStatusLineInput", () => {
         id: "seven_day",
         label: "Weekly",
         scope: [],
+        targetPercentPerHour: null,
         remainingPercent: 30,
         projectedRemainingPercent: null,
         resetsAtMs: null,
@@ -455,6 +456,7 @@ describe("buildStatusLineInput", () => {
         id: "weekly-fable",
         label: "Fable",
         scope: ["claude-fable-5-2"],
+        targetPercentPerHour: null,
         remainingPercent: 10,
         projectedRemainingPercent: null,
         resetsAtMs: null,
@@ -537,8 +539,8 @@ describe("buildStatusLineInput", () => {
     expect(buildStatusLineStats(incompleteTiers)).toMatchObject({
       weekly: null,
       weeklyAccounts: [
-        { label: "AE", remainingPercent: 75 },
-        { label: "BE", remainingPercent: 25 },
+        { label: null, remainingPercent: 75 },
+        { label: null, remainingPercent: 25 },
       ],
     });
     expect(buildStatusLineInput(incompleteTiers).rate_limits).toEqual({
@@ -546,8 +548,8 @@ describe("buildStatusLineInput", () => {
     });
     expect(buildStatusLineModelUsage(incompleteTiers)[0]?.limits).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Weekly · AE", remainingPercent: 75 }),
-        expect.objectContaining({ label: "Weekly · BE", remainingPercent: 25 }),
+        expect.objectContaining({ label: "Weekly", remainingPercent: 75 }),
+        expect.objectContaining({ label: "Weekly", remainingPercent: 25 }),
       ]),
     );
     const nearlySpent = buildStatusLineStats({
@@ -739,8 +741,8 @@ describe("buildStatusLineInput", () => {
     expect(buildStatusLineStats(ambiguous).weekly).toBeNull();
     expect(buildStatusLineModelUsage(ambiguous)[0]?.limits).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Weekly · PE", remainingPercent: 80 }),
-        expect.objectContaining({ label: "Weekly · UE", remainingPercent: 20 }),
+        expect.objectContaining({ label: "Weekly", remainingPercent: 80 }),
+        expect.objectContaining({ label: "Weekly", remainingPercent: 20 }),
       ]),
     );
 
@@ -848,7 +850,12 @@ describe("buildStatusLineInput", () => {
           },
         ],
       }).weekly,
-    ).toEqual({ remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null });
+    ).toEqual({
+      remainingPercent: 57,
+      projectedRemainingPercent: null,
+      resetsAtMs: null,
+      targetPercentPerHour: null,
+    });
   });
 
   it("lists every enabled provider's models and keeps their limits separate", () => {
@@ -1002,6 +1009,198 @@ describe("buildStatusLineInput", () => {
     expect(buildStatusLineInput(onlyFable)).not.toHaveProperty("rate_limits");
   });
 
+  it("colors weekly quotas by remaining usage or the target while keeping quota pace", () => {
+    const provider = source.providers[0]!;
+    const usageLimits = {
+      checkedAt: provider.checkedAt,
+      windows: [
+        {
+          id: "weekly",
+          kind: "weekly" as const,
+          label: "Weekly",
+          usedPercent: 20,
+          resetsAt: DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 3_600_000)),
+          burnRatePercentPerSecond: 2 / 3_600,
+        },
+      ],
+    };
+    const input = {
+      ...source,
+      showWeeklyDepletionRatio: true,
+      providers: [{ ...provider, usageLimits }],
+    };
+    const weekly = buildStatusLineStats(input).weekly!;
+    expect(statusLineQuotaColorPercent(weekly, source.nowMs)).toBe(20);
+    expect(weekly).toMatchObject({ projectedRemainingPercent: 78, depletionRatioPercent: 3 });
+
+    const targeted = { ...input, statusLineWeeklyTargetPercentPerHour: 2 };
+    const limit = buildStatusLineModelUsage(targeted)[0]!.limits[0]!;
+    expect(statusLineQuotaColorPercent(limit, source.nowMs)).toBe(50);
+    expect(limit.depletionRatioPercent).toBe(weekly.depletionRatioPercent);
+    expect(buildStatusLineStats(targeted).weekly?.targetPercentPerHour).toBe(2);
+  });
+
+  it("switches estimators and decays idle EMA with at most one estimated point", () => {
+    const provider = source.providers[0]!;
+    const minute = 60_000;
+    const toIso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
+    const window = {
+      id: "weekly",
+      kind: "weekly" as const,
+      label: "Weekly",
+      usedPercent: 20,
+      resetsAt: toIso(source.nowMs + 6 * 24 * 60 * minute),
+      burnRatePercentPerSecond: 0.01,
+      burnRateSampledAtMs: source.nowMs - 30 * minute,
+      burnEstimate: {
+        checkpointAtMs: source.nowMs - 30 * minute,
+        homuUsedPercent: 0.4,
+        unexplainedRatePercentPerSecond: 0.001,
+      },
+      meterHistory: [
+        { atMs: source.nowMs - 90 * minute, usedPercent: 10 },
+        { atMs: source.nowMs - 30 * minute, usedPercent: 20 },
+      ],
+    };
+    const input = {
+      ...source,
+      providers: [
+        { ...provider, usageLimits: { checkedAt: provider.checkedAt, windows: [window] } },
+      ],
+      statusLineWeeklyBurnTauMinutes: 30,
+    };
+    const weekly = buildStatusLineStats(input).weekly!;
+    expect(weekly.remainingPercent).toBe(79);
+    expect(weekly.burnRatePercentPerSecond).toBeCloseTo(
+      0.01 * Math.exp(-1) + (1 - Math.exp(-1)) / 1800,
+    );
+    const sliding = buildStatusLineStats({
+      ...input,
+      statusLineWeeklyRateEstimator: { kind: "sliding", minutes: 60 },
+    }).weekly!;
+    expect(sliding.burnRatePercentPerSecond).toBeCloseTo(11 / 3600);
+    const withoutObservedHistory = buildStatusLineStats({
+      ...input,
+      providers: [
+        {
+          ...input.providers[0]!,
+          usageLimits: {
+            checkedAt: provider.checkedAt,
+            windows: [
+              {
+                ...window,
+                meterHistory: [
+                  { atMs: source.nowMs - 24 * 60 * minute, usedPercent: 0 },
+                  window.meterHistory[1]!,
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      statusLineWeeklyRateEstimator: { kind: "sliding", minutes: 60 },
+    }).weekly!;
+    expect(withoutObservedHistory.burnRatePercentPerSecond).toBeUndefined();
+    const reset = buildStatusLineStats({
+      ...input,
+      statusLineWeeklyRateEstimator: { kind: "reset" },
+    }).weekly!;
+    expect(reset.burnRatePercentPerSecond).toBeCloseTo(21 / (24 * 3600));
+    expect(buildStatusLineInput(input).rate_limits).toMatchObject({
+      seven_day: { used_percentage: 20 },
+    });
+  });
+
+  it("weights grouped account usage by API-equivalent weekly allowances", () => {
+    const provider = source.providers[0]!;
+    const driver = ProviderDriverKind.make("codex");
+    const endpoint = "http://localhost:8317";
+    const instanceId = ProviderInstanceId.make("codex");
+    const reset = DateTime.formatIso(DateTime.makeUnsafe(source.nowMs + 3_600_000));
+    const grouped = buildStatusLineStats({
+      ...source,
+      providers: [{ ...provider, instanceId, driver, auth: { endpoint, status: "authenticated" } }],
+      usageLimitSources: [
+        {
+          id: UsageLimitSourceId.make("proxy"),
+          kind: "cliproxy",
+          label: "Proxy",
+          endpoint,
+          checkedAt: provider.checkedAt,
+          accounts: [20, 80].map((usedPercent, index) => ({
+            id: String(index),
+            driver,
+            plan: index === 0 ? "ChatGPT Pro 100 Subscription" : "ChatGPT Edu Plus Subscription",
+            usageLimits: {
+              checkedAt: provider.checkedAt,
+              windows: [
+                { id: "weekly", kind: "weekly", label: "Weekly", usedPercent, resetsAt: reset },
+              ],
+            },
+          })),
+        },
+      ],
+      statusLineCustomBars: [
+        {
+          id: "group",
+          label: "Group",
+          visible: true,
+          showQuotaPace: true,
+          targetPercentPerHour: null,
+          source: {
+            type: "usage",
+            scope: { kind: "provider", providerInstanceId: instanceId },
+            basis: "percentages",
+            window: { kind: "ema" },
+          },
+        },
+      ],
+    });
+    expect(grouped.customBars?.[0]?.usedPercent).toBeCloseTo((20 * 489 + 80 * 64) / (489 + 64));
+  });
+
+  it("builds custom bars from tracked quota and reported metric values", () => {
+    const stats = buildStatusLineStats({
+      ...source,
+      statusLineCustomBars: [
+        {
+          id: "quota",
+          visible: true,
+          showQuotaPace: true,
+          label: "Fable",
+          targetPercentPerHour: null,
+          source: {
+            type: "quota",
+            providerInstanceId: source.providers[0]!.instanceId,
+            limitId: "weekly-fable",
+          },
+        },
+        {
+          id: "metric",
+          visible: true,
+          showQuotaPace: true,
+          label: "Build minutes",
+          targetPercentPerHour: 4,
+          source: { type: "metric", key: "build" },
+        },
+        {
+          id: "missing",
+          visible: true,
+          showQuotaPace: true,
+          label: "Missing",
+          targetPercentPerHour: null,
+          source: { type: "metric", key: "toString" },
+        },
+      ],
+      statusLineMetrics: { build: { remainingPercent: 32, burnRatePercentPerHour: 4 } },
+    });
+    expect(stats.customBars).toMatchObject([
+      { id: "quota", label: "Fable", remainingPercent: 10 },
+      { id: "metric", label: "Build minutes", remainingPercent: 32, resetsAtMs: null },
+    ]);
+    expect(statusLineQuotaColorPercent(stats.customBars![1]!, source.nowMs)).toBe(50);
+  });
+
   it("gives a client the same facts to draw itself", () => {
     expect(buildStatusLineStats(source)).toEqual({
       modelName: "Opus 5.5",
@@ -1022,7 +1221,12 @@ describe("buildStatusLineInput", () => {
         resetsAtMs: Date.parse("2026-11-16T02:01:00.000Z"),
         usedPercent: 47.4,
       },
-      weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
+      weekly: {
+        remainingPercent: 57,
+        projectedRemainingPercent: null,
+        resetsAtMs: null,
+        targetPercentPerHour: null,
+      },
       weeklyAccounts: [],
       cachePercent: 99,
       inputTokens: 338_000,
