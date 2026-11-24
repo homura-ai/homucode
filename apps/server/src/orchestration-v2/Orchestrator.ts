@@ -205,7 +205,11 @@ import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
-import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import {
+  isAutomaticCompletionRun,
+  queuedMessageHeadForSteering,
+  queuedRunsInDeliveryOrder,
+} from "./QueuedRunOrder.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -8192,6 +8196,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         dispatchMode = { type: "start_immediately" };
       }
     }
+    const parsedGoalCommand = parseGoalCommand(command);
     // Steers held during a compaction go in before a newer one that arrives as it ends.
     if (
       dispatchMode.type === "steer_active" &&
@@ -8199,7 +8204,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.notification === undefined &&
       command.delegatedCompletion === undefined &&
       (() => {
-        const head = queuedRunsInDeliveryOrder(projection)[0];
+        const head = queuedRunsInDeliveryOrder(projection).find(
+          (run) => !isAutomaticCompletionRun(projection, run),
+        );
         return head?.autoSteer === true && head.queueHeld !== true;
       })()
     ) {
@@ -8233,7 +8240,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
     if (stoppedRunHoldingFindings !== undefined) dispatchMode = { type: "queue_after_active" };
     // An agent's automatic send must not overtake an earlier agent message still queued
-    // (e.g. behind /compact), or the agent receives them out of send order.
+    // (e.g. behind /compact). Delegated completions have their own queue order.
     if (
       command.deliveryIntent === "auto" &&
       command.createdBy === "agent" &&
@@ -8249,7 +8256,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             queuedRuns.map((run) => run.userMessageId),
           )
           .pipe(mapDispatchError(command));
-        if ([...queuedMessages.values()].some((message) => message.createdBy === "agent")) {
+        const targetRunId = dispatchMode.targetRunId;
+        const target = projection.runs.find((run) => run.id === targetRunId);
+        const canSteerPastCompletion =
+          dispatchMode.type === "steer_active" &&
+          target !== undefined &&
+          command.attachments.length === 0 &&
+          command.freshContext !== true &&
+          command.turnOnlyModelSelection !== true &&
+          parsedGoalCommand === null &&
+          !isNativeMaintenanceCommand(command) &&
+          modelSelectionsEqual(target.modelSelection, modelSelection);
+        if (
+          [...queuedMessages.values()].some(
+            (message) =>
+              message.createdBy === "agent" &&
+              (!canSteerPastCompletion || message.delegatedCompletion === undefined),
+          )
+        ) {
           dispatchMode = { type: "queue_after_active" };
         }
       }
@@ -8263,7 +8287,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode = { type: "start_immediately" };
     }
     const freshContext = command.freshContext === true;
-    const parsedGoalCommand = parseGoalCommand(command);
     const haltMessage =
       command.createdBy === "user" &&
       isHaltMessage(command, true) &&
@@ -12848,7 +12871,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // Automatic selectors read outside this dispatch lock. Revalidate their snapshot
     // before cancelling/reassigning a queued message or interrupting compaction.
     if (String(command.commandId).startsWith("server:auto-steer:")) {
-      if (queuedRunsInDeliveryOrder(projection)[0]?.id !== queuedRun.id)
+      if (queuedMessageHeadForSteering(projection, command.targetRunId)?.id !== queuedRun.id)
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
@@ -12873,13 +12896,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           turnItemStatuses: ["running"],
         })
         .pipe(mapDispatchError(command));
-      if (
-        resolveMessageDispatchIntent(
-          { ...projection, turnItems: runningCompactions },
-          { type: "start_immediately" },
-          "auto",
-        ).type !== "steer_active"
-      )
+      const mode = resolveMessageDispatchIntent(
+        { ...projection, turnItems: runningCompactions },
+        { type: "start_immediately" },
+        "auto",
+      );
+      if (mode.type !== "steer_active" || mode.targetRunId !== command.targetRunId)
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
