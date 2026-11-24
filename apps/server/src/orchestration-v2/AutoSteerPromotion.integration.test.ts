@@ -395,6 +395,87 @@ it.effect("queues a new steer behind held steers, and never auto-steers a /compa
   }).pipe(Effect.provide(layer)),
 );
 
+it.effect.each(["steer", "auto", "stopping", "agent"] as const)(
+  "applies cooldown rules to follow-ups on a running Codex turn (%s)",
+  (scenario) => {
+    const cooldownStart = Date.parse("2026-11-21T05:00:00.000Z");
+    const retryAt = "2026-11-21T05:01:00.000Z";
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(cooldownStart - 1);
+      const f = yield* setup;
+      yield* TestClock.adjust(1);
+      const messageId = MessageId.make("message:model-cooldown:steer");
+      const commandId = CommandId.make("send:model-cooldown:steer");
+      const message = {
+        type: "message.dispatch",
+        commandId,
+        threadId: f.threadId,
+        messageId,
+        text: "Stop after the next checkpoint",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      } as const;
+      const queuedMessageId = MessageId.make("message:model-cooldown:queued");
+      yield* f.engine.dispatch({
+        ...message,
+        commandId: CommandId.make("send:model-cooldown:queued"),
+        messageId: queuedMessageId,
+        dispatchMode: { type: "queue_after_active" },
+      });
+      if (scenario === "stopping") {
+        yield* f.engine.dispatch({
+          type: "run.interrupt",
+          commandId: CommandId.make("stop:model-cooldown"),
+          threadId: f.threadId,
+          runId: f.active.id,
+          holdQueue: true,
+        });
+      }
+      yield* f.engine.dispatch(
+        scenario === "agent"
+          ? {
+              ...message,
+              createdBy: "agent",
+              creationSource: "server",
+              dispatchMode: { type: "steer_active", targetRunId: f.active.id },
+            }
+          : { ...message, deliveryIntent: scenario === "auto" ? "auto" : "steer" },
+      );
+      const projection = yield* f.store.getThreadProjection(f.threadId);
+      assert.equal(
+        projection.runs.find((run) => run.userMessageId === queuedMessageId)?.modelCooldownUntil,
+        retryAt,
+      );
+      if (scenario === "stopping" || scenario === "agent") {
+        const queued = projection.runs.find((run) => run.userMessageId === messageId);
+        assert.equal(queued?.status, "queued");
+        assert.equal(queued?.modelCooldownUntil, scenario === "stopping" ? retryAt : undefined);
+        return;
+      }
+      assert.equal(projection.messages.find((row) => row.id === messageId)?.runId, f.active.id);
+      const effects = yield* (yield* Outbox.EffectOutboxV2).listByCommandId(commandId);
+      assert.deepEqual(
+        effects.map((effect) => effect.request.type),
+        ["provider-turn.steer"],
+      );
+    }).pipe(
+      Effect.provide(
+        layer.pipe(
+          Layer.provide(
+            Layer.succeed(ModelCooldowns, {
+              retryAt: (_, now) => Effect.succeed(now >= cooldownStart ? retryAt : null),
+              recheck: () => Effect.undefined,
+            }),
+          ),
+        ),
+      ),
+    );
+  },
+);
+
 it.effect.each(["start_immediately", "defer_start", "cancel"] as const)(
   "waits for a cooling model without losing another queued send (%s)",
   (scenario) => {

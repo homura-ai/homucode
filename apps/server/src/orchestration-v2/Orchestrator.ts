@@ -8245,7 +8245,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode = { type: "start_immediately" };
     }
     const freshContext = command.freshContext === true;
-    const modelCooldownUntil =
+    const parsedGoalCommand = parseGoalCommand(command);
+    const haltMessage =
+      command.createdBy === "user" &&
+      isHaltMessage(command, true) &&
+      (yield* serverSettings.getSettings.pipe(Effect.orDie)).bareStopWaitEnabled;
+    const retryAt =
       command.createdBy === "user" && dispatchMode.type !== "defer_start"
         ? yield* modelCooldowns.retryAt(modelSelection, DateTime.toEpochMillis(yield* DateTime.now))
         : null;
@@ -8253,10 +8258,39 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (run) =>
         run.status === "queued" && run.modelCooldownUntil !== undefined && run.queueHeld !== true,
     );
+    const steerTargetId = dispatchMode.type === "steer_active" ? dispatchMode.targetRunId : null;
+    const steerTarget =
+      steerTargetId === null ? undefined : projection.runs.find((run) => run.id === steerTargetId);
+    const steerCapabilities = steerTarget && providerTurnCapabilities(projection, steerTarget);
+    // CLIProxyAPI cooldowns govern new model requests. A native steer submits
+    // input to a turn already running on the selected model.
+    const steersRunningModel =
+      command.createdBy === "user" &&
+      (retryAt !== null || cooldownQueued) &&
+      steerTarget?.status === "running" &&
+      steerTarget.providerInstanceId === modelSelection.instanceId &&
+      steerTarget.modelSelection.model === modelSelection.model &&
+      steerCapabilities?.supportsActiveSteering === true &&
+      (command.attachments.length === 0 ||
+        steerCapabilities.activeSteeringAcceptsAttachments !== false) &&
+      !freshContext &&
+      command.turnOnlyModelSelection !== true &&
+      parsedGoalCommand === null &&
+      !isNativeMaintenanceCommand(command) &&
+      !haltMessage &&
+      projection.providerThreads.some(
+        (thread) => thread.id === steerTarget.providerThreadId && thread.driver === "codex",
+      ) &&
+      projection.providerTurns.some(
+        (turn) => turn.runAttemptId === steerTarget.activeAttemptId && turn.status === "running",
+      ) &&
+      !(yield* stopReachedRun(command, command.threadId, steerTarget.id));
+    const modelCooldownUntil = steersRunningModel ? null : retryAt;
     if (
       modelCooldownUntil !== null ||
       (cooldownQueued &&
-        (dispatchMode.type === "start_immediately" || dispatchMode.type === "steer_active"))
+        (dispatchMode.type === "start_immediately" ||
+          (dispatchMode.type === "steer_active" && !steersRunningModel)))
     ) {
       dispatchMode = { type: "queue_after_active" };
     }
@@ -8268,7 +8302,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode = { type: "queue_after_active" };
     }
     // Native goal commands must not steer an existing turn.
-    const parsedGoalCommand = parseGoalCommand(command);
     const goalCommand =
       parsedGoalCommand === null ||
       (yield* goalDriverFor(command, modelSelection.instanceId)) === undefined
@@ -8432,11 +8465,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       queuedRunStop === undefined &&
       goalCommand === null &&
       dispatchMode.type !== "restart_active" &&
-      command.createdBy === "user" &&
-      isHaltMessage(
-        command,
-        (yield* serverSettings.getSettings.pipe(Effect.orDie)).bareStopWaitEnabled,
-      )
+      haltMessage
     ) {
       const target = projection.runs.findLast(isLiveRun);
       const targetMessage = projection.messages.find(
