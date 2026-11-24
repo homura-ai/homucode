@@ -600,7 +600,7 @@ export interface ProviderAdapterV2InterruptInput {
   readonly requestRuntimeRestart?: boolean;
   readonly sendSteer?: {
     readonly messageId: MessageId;
-    readonly onSkipped: () => void;
+    readonly onTurnKeptOpen: () => void;
   };
 }
 
