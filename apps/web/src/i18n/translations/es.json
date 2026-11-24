@@ -9069,7 +9069,7 @@
   "13e86eb5d8287a71": "Muestra un mensaje siguiente previsto en el cuadro de mensaje vacío tras un turno de Claude o Codex. Tab lo usa. Cada uno es una solicitud extra en caché de tu plan. Requiere Codex 0.165+. Los hilos de Claude se actualizan al reiniciar.",
   "d4b2a2ec812aafb0": "Sugerir el siguiente prompt",
   "298c7150a7621c80": "Hosts de dispositivos Simlock",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "f9904f78d3003f58": "Checkout rápido de worktrees",
   "ec7623deed751c05": [
     "Comparte un hilo con un invitado que lo ve en directo en un navegador y envía mensajes que tú apruebas. Requiere T3 Connect: inicia sesión y vincula esta máquina en",
@@ -11999,7 +11999,7 @@
   "4a21cf825a2045b0": "beta tab autocompletar predecir siguiente mensaje claude codex texto fantasma",
   "fea2dc36585c4a20": "Hosts de dispositivos Simlock (alfa)",
   "9d834d178130180e": "beta alfa simlock callstack simulador emulador ios android grupo préstamo gateway",
-  "bcb520297a9ae143": "beta worktree rápido checkout clonar apfs copy-on-write caché macos velocidad",
+  "8701cb8884c0c7d3": "beta worktree rápido checkout clonar apfs copy-on-write caché macos velocidad btrfs xfs linux espacio en disco",
   "4c83ac419da342bd": "enviar audio del micrófono dictado destino voz habla stt transcripción entorno máquina consentimiento privacidad nube OpenAI Grok OpenRouter",
   "f9c000e92379d027": "micrófono entrada audio dispositivo orden prioridad preferido",
   "22811f405e0b4b28": "voz habla teclado atajo mantener alternar automático",

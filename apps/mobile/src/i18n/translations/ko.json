@@ -4019,7 +4019,7 @@
   "f0e853acd2006d53": "연결된 환경",
   "0b83813eb16a9bc0": "한 머신의 에이전트가 다른 머신에서, 다른 머신의 에이전트가 이 머신에서 작업하도록 허용합니다. 머신마다 켜세요. 꺼져 있으면 링크를 통해 새 작업이 시작되지 않으며, 실행 중인 작업은 끝까지 진행됩니다.",
   "f9904f78d3003f58": "빠른 워크트리 체크아웃",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "d6ada5ec242e37ff": "사용량 한도",
   "62127e7b5c0f57a3": "사용량 한도 후 재개",
   "4df30d44eb0b0728": "사용량 한도가 초기화되면 스레드를 자동으로 재개합니다. 각 스레드에서 자동 재개를 취소할 수 있습니다.",

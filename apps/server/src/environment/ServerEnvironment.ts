@@ -19,6 +19,7 @@ import { resolveServerInstallation } from "../cli/invocation.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
+import * as CheckoutCloner from "../vcs/CheckoutCloner.ts";
 import * as ServerConfig from "../config.ts";
 import { databaseMigrationHead } from "../persistence/databaseMigrationHead.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -208,6 +209,7 @@ export const make = Effect.gen(function* () {
     serverConfig.desktopTelemetryControlFd !== undefined;
 
   const databaseMigration = databaseMigrationHead(serverConfig.dbPath);
+  const fastWorktreeCheckout = yield* CheckoutCloner.supported();
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
     label,
@@ -249,7 +251,7 @@ export const make = Effect.gen(function* () {
       projectWorktreeCleanup: true,
       settledWorktreeCleanup: true,
       worktreesDirectory: true,
-      ...(hostPlatform === "darwin" ? { fastWorktreeCheckout: true } : {}),
+      ...(fastWorktreeCheckout ? { fastWorktreeCheckout: true } : {}),
       threadAutoSettlementScope: true,
       threadRestartContinuation: true,
       projectSettingsOverrides: true,

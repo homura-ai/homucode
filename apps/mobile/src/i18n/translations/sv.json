@@ -4024,7 +4024,7 @@
   "f0e853acd2006d53": "Länkade miljöer",
   "0b83813eb16a9bc0": "Låt agenter på en dator arbeta på dina andra datorer, och deras på den. Aktivera det på varje dator. När det är av startar inget nytt via en länk; pågående uppgifter slutförs.",
   "f9904f78d3003f58": "Snabb utcheckning av worktree",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "d6ada5ec242e37ff": "Användningsgränser",
   "62127e7b5c0f57a3": "Återuppta efter användningsgränser",
   "4df30d44eb0b0728": "Återuppta trådar automatiskt när deras användningsgränser återställs. Du kan avbryta automatisk återupptagning i varje tråd.",

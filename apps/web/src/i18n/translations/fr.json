@@ -9070,7 +9070,7 @@
   "13e86eb5d8287a71": "Affiche un prochain message suggéré dans la zone de saisie vide après un tour Claude ou Codex. Tab l’utilise. Chaque suggestion est une requête en cache supplémentaire sur votre forfait. Nécessite Codex 0.165+. Les fils Claude se mettent à jour au redémarrage.",
   "d4b2a2ec812aafb0": "Suggérer le prochain prompt",
   "298c7150a7621c80": "Hôtes d’appareils Simlock",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "f9904f78d3003f58": "Checkout rapide des worktrees",
   "ec7623deed751c05": [
     "Partagez un fil avec un invité qui le suit en direct dans un navigateur et envoie des messages que vous approuvez. Nécessite T3 Connect : connectez-vous et associez cette machine dans",
@@ -12003,7 +12003,7 @@
   "4a21cf825a2045b0": "bêta tab autocomplétion prédire prochain message claude codex texte fantôme",
   "fea2dc36585c4a20": "Hôtes d’appareils Simlock (alpha)",
   "9d834d178130180e": "bêta alpha simlock callstack simulateur émulateur ios android pool bail passerelle",
-  "bcb520297a9ae143": "bêta rapide worktree extraction clone apfs copie sur écriture cache macos vitesse",
+  "8701cb8884c0c7d3": "bêta rapide worktree extraction clone apfs copie sur écriture cache macos vitesse btrfs xfs linux espace disque",
   "4c83ac419da342bd": "envoyer microphone audio dictée destination parole voix stt transcription environnement machine consentement confidentialité cloud OpenAI Grok OpenRouter",
   "f9c000e92379d027": "micro entrée audio appareil ordre priorité préféré",
   "22811f405e0b4b28": "parole voix clavier raccourci maintenir basculer auto",

@@ -9071,7 +9071,7 @@
   "13e86eb5d8287a71": "Показывать предполагаемое следующее сообщение в пустом поле ввода после хода Claude или Codex. Tab вставляет его. Каждое — дополнительный кешированный запрос в рамках вашего плана. Нужен Codex 0.165+. Треды Claude обновятся после перезапуска.",
   "d4b2a2ec812aafb0": "Предлагать следующий промпт",
   "298c7150a7621c80": "Хосты устройств Simlock",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "f9904f78d3003f58": "Быстрый checkout рабочих деревьев",
   "ec7623deed751c05": [
     "Поделитесь тредом с гостем: он смотрит его в браузере в реальном времени и отправляет сообщения, которые вы одобряете. Нужен T3 Connect: войдите и привяжите эту машину в разделе",
@@ -12004,7 +12004,7 @@
   "4a21cf825a2045b0": "бета tab автодополнение предсказать следующее сообщение claude codex подсказка",
   "fea2dc36585c4a20": "Хосты устройств Simlock (альфа)",
   "9d834d178130180e": "бета альфа simlock callstack симулятор эмулятор ios android пул аренда шлюз",
-  "bcb520297a9ae143": "бета быстрый checkout рабочего дерева клон apfs copy-on-write кеш macos скорость",
+  "8701cb8884c0c7d3": "бета быстрый checkout рабочего дерева клон apfs copy-on-write кеш macos скорость btrfs xfs linux место на диске",
   "4c83ac419da342bd": "отправить звук микрофона диктовка назначение речь голос stt расшифровка окружение компьютер согласие конфиденциальность облако OpenAI Grok OpenRouter",
   "f9c000e92379d027": "микрофон ввод звук устройство порядок приоритет предпочтительный",
   "22811f405e0b4b28": "речь голос клавиатура горячая клавиша удержание переключение авто",
