@@ -257,6 +257,28 @@ it.effect("persists an EMA by account and window and initializes after a reset",
       const reset = yield* record("one", 5, 14.5 * hourMs);
       assert.closeTo(reset.rate, 5 / 1920, 1e-12);
       assert.strictEqual(reset.interval, undefined);
+      const now = yield* Clock.currentTimeMillis;
+      const charge = { atMs: now - 1000, percent: 0.25, model: "claude-fable-5-2" };
+      const burnRate = yield* UsageBurnRate.UsageBurnRate;
+      const readings = yield* burnRate.record(
+        ["claude", "account"],
+        {
+          checkedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+          windows: ["seven_day", "seven_day_fable"].map((id) => ({
+            id,
+            kind: "weekly" as const,
+            label: id,
+            usedPercent: 1,
+            resetsAt: DateTime.formatIso(DateTime.makeUnsafe(now + hourMs)),
+          })),
+        },
+        [charge],
+        charge.atMs,
+      );
+      assert.deepStrictEqual(
+        readings.windows.map((window) => window.homuCharges),
+        [[], [charge]],
+      );
     }).pipe(Effect.provide(recorder));
   }),
 );

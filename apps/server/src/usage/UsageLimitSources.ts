@@ -143,7 +143,6 @@ export const make = Effect.gen(function* () {
     config: UsageLimitSourceConfig,
   ) {
     const directory = config.usageLedgerDir;
-    let coverageStartMs: number | undefined;
     const chargesByAccount = new Map<string, UsageBurnRate.StatusLineAccountCharge[]>();
     if (
       directory &&
@@ -164,10 +163,6 @@ export const make = Effect.gen(function* () {
         Effect.provideService(Path.Path, path.value),
       );
       if (executions.length > 0) {
-        coverageStartMs = executions.reduce(
-          (first, entry) => Math.min(first, Date.parse(entry.timestamp)),
-          now,
-        );
         const ids = [
           ...new Set(executions.flatMap((entry) => (entry.thread_id ? [entry.thread_id] : []))),
         ];
@@ -211,13 +206,15 @@ export const make = Effect.gen(function* () {
               records.map((row) => row.record),
             )
             .pipe(Effect.orElseSucceed(() => []));
-          for (const account of accounts.values()) {
-            if (account.quotaAccountFingerprint) chargesByAccount.set(account.id, []);
-          }
           for (const [index, row] of records.entries()) {
             const price = prices[index];
             if (!price || price.costSource === "unpriced") continue;
-            chargesByAccount.get(row.account.id)?.push({
+            let charges = chargesByAccount.get(row.account.id);
+            if (!charges) {
+              charges = [];
+              chargesByAccount.set(row.account.id, charges);
+            }
+            charges.push({
               atMs: Date.parse(row.entry.timestamp),
               percent: (100 * price.costUsd) / row.allowance,
               model: row.entry.model,
@@ -226,8 +223,13 @@ export const make = Effect.gen(function* () {
         }
       }
     }
-    return yield* Effect.forEach(hub.accounts, (account: UsageLimitSourceAccount) =>
-      burnRate
+    return yield* Effect.forEach(hub.accounts, (account: UsageLimitSourceAccount) => {
+      const charges = chargesByAccount.get(account.id);
+      const coverageStartMs = charges?.reduce(
+        (first, charge) => Math.min(first, charge.atMs),
+        Infinity,
+      );
+      return burnRate
         .record(
           [
             "hub",
@@ -241,11 +243,11 @@ export const make = Effect.gen(function* () {
             account.usageLimits.credentialFingerprint,
           ],
           account.usageLimits,
-          chargesByAccount.get(account.id),
+          charges,
           coverageStartMs,
         )
-        .pipe(Effect.map((usageLimits) => ({ ...account, usageLimits }))),
-    );
+        .pipe(Effect.map((usageLimits) => ({ ...account, usageLimits })));
+    });
   });
   const readManagementKey = Effect.fn("UsageLimitSources.readManagementKey")(function* (
     config: UsageLimitSourceConfig,

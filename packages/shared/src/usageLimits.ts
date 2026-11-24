@@ -857,11 +857,11 @@ function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   return limits.windows.length === 0 ? "No limits reported." : null;
 }
 
-// API-equivalent dollars per full weekly allowance, measured on pbox in November 2026.
 export function statusLineWindowModels(window: Pick<ServerProviderUsageWindow, "id" | "modelIds">) {
   return window.modelIds ?? (window.id === "seven_day_fable" ? ["claude-fable"] : undefined);
 }
 
+// API-equivalent dollars per full weekly allowance, measured on pbox in November 2026.
 export function weeklyAllowanceUsd(
   provider: "codex" | "claude",
   plan: string | undefined,

@@ -106,13 +106,7 @@ const make = Effect.gen(function* () {
         ? previous.rate
         : smoothUsageBurnRate(previous.interval, tauMinutes)
       : 0;
-    const windowModels = statusLineWindowModels(window);
-    const applicable =
-      window.kind === "weekly"
-        ? charges?.filter(
-            (charge) => !windowModels || windowModels.some((id) => charge.model.startsWith(id)),
-          )
-        : undefined;
+    const applicable = window.kind === "weekly" ? charges : undefined;
     const chargeSince = (start: number, end: number) =>
       applicable?.reduce(
         (sum, charge) => (charge.atMs >= start && charge.atMs < end ? sum + charge.percent : sum),
@@ -232,6 +226,25 @@ const make = Effect.gen(function* () {
       const current = yield* settings.getSettings.pipe(Effect.option);
       if (current._tag === "None") return limits;
       const observedAtMs = Date.parse(limits.checkedAt);
+      const weekly = limits.windows.filter((window) => window.kind === "weekly");
+      const scoped = weekly.flatMap((window) => {
+        const models = statusLineWindowModels(window);
+        return models ? [{ window, models }] : [];
+      });
+      const general = weekly.find((window) => !statusLineWindowModels(window));
+      const chargesByWindow = new Map<ServerProviderUsageWindow, StatusLineAccountCharge[]>();
+      for (const charge of charges ?? []) {
+        const window =
+          scoped.find(({ models }) => models.some((id) => charge.model.startsWith(id)))?.window ??
+          general;
+        if (!window) continue;
+        let assigned = chargesByWindow.get(window);
+        if (!assigned) {
+          assigned = [];
+          chargesByWindow.set(window, assigned);
+        }
+        assigned.push(charge);
+      }
       const windows = yield* Effect.forEach(limits.windows, (window) =>
         recordWindow(
           account,
@@ -240,7 +253,7 @@ const make = Effect.gen(function* () {
           window.kind === "weekly"
             ? current.value.statusLineWeeklyBurnTauMinutes
             : current.value.statusLineSessionBurnTauMinutes,
-          charges,
+          charges === undefined ? undefined : (chargesByWindow.get(window) ?? []),
           coverageStartMs,
         ),
       );
