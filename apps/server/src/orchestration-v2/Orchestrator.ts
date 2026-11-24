@@ -17550,6 +17550,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : dispatch;
   });
 
+  const sendSteerNowAndWait = Effect.fn("Orchestrator.sendSteerNowAndWait")(function* (
+    command: Extract<OrchestrationV2ServerCommand, { readonly type: "steer.send-now" }>,
+  ) {
+    const result = yield* dispatchWithReceipt(command);
+
+    // Wait outside the dispatch locks so provider events can settle the interrupted turn.
+    const outboxError = mapDispatchError(command);
+    const [interrupt] = yield* effectOutbox.listByCommandId(command.commandId).pipe(outboxError);
+    if (interrupt === undefined) return result;
+    yield* effectOutbox.awaitSettled(interrupt.id).pipe(outboxError);
+    const settled = yield* effectOutbox.get(interrupt.id).pipe(outboxError);
+    if (Option.exists(settled, ({ status }) => status === "failed" || status === "cancelled")) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "Send now could not stop the current turn.",
+      });
+    }
+    return result;
+  });
+
   const handleRunUpdate = Effect.fn("Orchestrator.handleRunUpdate")(
     function* (stored: OrchestrationV2StoredEvent) {
       if (stored.event.type !== "run.updated") return;
@@ -18087,7 +18108,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return effectOutbox.awaitSettled(`effect:restart-continuation:${run.id}`).pipe(Effect.ignore);
     }),
     withMessageIntake: messageIntake.withLock,
-    dispatch: dispatchWithReceipt,
+    // Dispatch keeps its existing tracing, with a separate span for waiting on Send now.
+    dispatch: Effect.fnUntraced(function* (command: OrchestrationV2ServerCommand) {
+      return yield* command.type === "steer.send-now"
+        ? sendSteerNowAndWait(command)
+        : dispatchWithReceipt(command);
+    }),
     autoArmLimitRecovery: Effect.fn("OrchestratorV2.autoArmLimitRecovery")(function (input) {
       return threadDispatch.withLock(
         input.threadId,

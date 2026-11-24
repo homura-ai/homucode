@@ -13896,9 +13896,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const nativeThreadId = turnInput.providerThread.nativeThreadRef?.nativeId ?? null;
             const sendSteer = turnInput.sendSteer;
             if (sendSteer !== undefined) {
+              // Terminal events can still be in flight for a turn Claude has finished.
               if (
                 currentTurn?.providerTurnId !== turnInput.providerTurnId ||
-                currentTurn.steersClosed ||
+                currentTurn.steersClosed
+              ) {
+                return;
+              }
+              if (
                 !Array.from(currentTurn.pendingSteers.values()).some(
                   (steer) =>
                     steer.messageId === sendSteer.messageId &&

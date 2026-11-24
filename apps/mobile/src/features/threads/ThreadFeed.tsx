@@ -428,26 +428,33 @@ function SendSteerNowButton(props: {
   readonly messageId: MessageId;
 }) {
   const gt = useGT();
-  const send = useAtomCommand(threadEnvironment.sendSteerNow, "send steer now");
+  const m = useMessages();
+  const send = useAtomCommand(threadEnvironment.sendSteerNow, { reportFailure: false });
   const [sending, setSending] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityHint={gt("Interrupts the current work to deliver this steer")}
       disabled={sending}
+      accessibilityState={{ busy: sending, disabled: sending }}
       className="min-h-9 flex-row items-center gap-1.5 self-end rounded-full px-3 active:bg-subtle"
       onPress={async () => {
         setSending(true);
-        await send({
+        const result = await send({
           environmentId: props.environmentId,
           input: { threadId: props.threadId, messageId: props.messageId },
-        });
-        setSending(false);
+        }).finally(() => setSending(false));
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          Dialog.alert(
+            gt("Could not send steer"),
+            errorDisplayMessage(squashAtomCommandFailure(result), m) ?? gt("Try again."),
+          );
+        }
       }}
     >
       <SymbolView name="arrow.up" size={13} tintColorClassName="accent-foreground-secondary" />
       <Text className="font-t3-medium text-xs text-foreground-secondary">
-        <T>Send now</T>
+        {sending ? gt("Stopping…") : gt("Send now")}
       </Text>
     </Pressable>
   );

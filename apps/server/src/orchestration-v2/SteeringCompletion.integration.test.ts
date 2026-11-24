@@ -568,6 +568,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   extraAdapters: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]> = [],
   bareStopWaitEnabled = false,
   driverKind = nativeGoals === undefined ? "codex" : "opencode",
+  runEffectWorker = false,
 ) {
   const driver = ProviderDriverKind.make(driverKind);
   const cwd = yield* checkpointWorkspace(name);
@@ -708,7 +709,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   const layer = ProviderReplayHarness.layerWithRegistry(
     { name },
     ProviderAdapterRegistry.layerFromAdapters([adapter, ...extraAdapters]),
-    { runEffectWorker: false, serverSettings: { bareStopWaitEnabled } },
+    { runEffectWorker, serverSettings: { bareStopWaitEnabled } },
   );
   const startFirstTurn = Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3180,6 +3181,8 @@ it.effect.each(["Stop", "Send now"] as const)("sends an unread steer again after
   Effect.gen(function* () {
     let dropSteer: Effect.Effect<void> = Effect.void;
     const force = action === "Send now";
+    const interruptEntered = yield* Deferred.make<void>();
+    const finishInterrupt = yield* Deferred.make<void>();
     const messageId = MessageId.make("message:unread-steer");
     const { events, started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
       "steer-redelivered-after-stop",
@@ -3188,7 +3191,12 @@ it.effect.each(["Stop", "Send now"] as const)("sends an unread steer again after
       (input) =>
         Effect.suspend(() => {
           assert.equal(input.sendSteer?.messageId, force ? messageId : undefined);
-          return dropSteer;
+          return force
+            ? Deferred.succeed(interruptEntered, undefined).pipe(
+                Effect.andThen(Deferred.await(finishInterrupt)),
+                Effect.andThen(dropSteer),
+              )
+            : dropSteer;
         }),
       true,
       undefined,
@@ -3196,6 +3204,7 @@ it.effect.each(["Stop", "Send now"] as const)("sends an unread steer again after
       [],
       false,
       "claudeAgent",
+      force,
     );
     yield* Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3253,18 +3262,29 @@ it.effect.each(["Stop", "Send now"] as const)("sends an unread steer again after
         Stream.runDrain,
         Effect.forkScoped,
       );
-      yield* orchestrator.dispatch(
-        force
-          ? { type: "steer.send-now", commandId: CommandId.make("force-send"), threadId, messageId }
-          : {
-              type: "run.interrupt",
-              commandId: CommandId.make("stop"),
-              threadId,
-              runId: first.runId,
-              holdQueue: true,
-              leaveSubagentsRunning: true,
-            },
-      );
+      if (force) {
+        const sending = yield* orchestrator
+          .dispatch({
+            type: "steer.send-now",
+            commandId: CommandId.make("force-send"),
+            threadId,
+            messageId,
+          })
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(interruptEntered);
+        assert.isUndefined(sending.pollUnsafe());
+        yield* Deferred.succeed(finishInterrupt, undefined);
+        yield* Fiber.join(sending);
+      } else {
+        yield* orchestrator.dispatch({
+          type: "run.interrupt",
+          commandId: CommandId.make("stop"),
+          threadId,
+          runId: first.runId,
+          holdQueue: true,
+          leaveSubagentsRunning: true,
+        });
+      }
       yield* worker.drain();
       yield* Fiber.join(stopped);
       yield* worker.drain();
