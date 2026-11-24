@@ -13,7 +13,7 @@ import { forkParked } from "../serverActivation.ts";
 import { isActiveRun, resolveMessageDispatchIntent } from "./CommandPolicy.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import { queuedMessageHeadForSteering } from "./QueuedRunOrder.ts";
 
 /** Safety bound; each promotion consumes one queued run, so a pass ends long before this. */
 const MAX_PROMOTIONS_PER_PASS = 500;
@@ -36,9 +36,11 @@ export function nextAutoSteerPromotion(projection: {
   readonly providerSessions: Parameters<typeof resolveMessageDispatchIntent>[0]["providerSessions"];
   readonly turnItems: Parameters<typeof resolveMessageDispatchIntent>[0]["turnItems"];
 }): AutoSteerPromotion | null {
-  const head = queuedRunsInDeliveryOrder(
-    projection as Parameters<typeof queuedRunsInDeliveryOrder>[0],
-  )[0];
+  if (!projection.runs.some(isActiveRun)) return null;
+  const mode = resolveMessageDispatchIntent(projection, { type: "start_immediately" }, "auto");
+  if (mode.type !== "steer_active") return null;
+
+  const head = queuedMessageHeadForSteering(projection, mode.targetRunId);
   if (
     head === undefined ||
     head.autoSteer !== true ||
@@ -51,15 +53,7 @@ export function nextAutoSteerPromotion(projection: {
       null) !== null
   )
     return null;
-  if (!projection.runs.some(isActiveRun)) return null;
-  const mode = resolveMessageDispatchIntent(
-    projection as Parameters<typeof resolveMessageDispatchIntent>[0],
-    { type: "start_immediately" },
-    "auto",
-  );
-  return mode.type === "steer_active"
-    ? { queuedRunId: head.id, targetRunId: mode.targetRunId }
-    : null;
+  return { queuedRunId: head.id, targetRunId: mode.targetRunId };
 }
 
 const triggers = (event: OrchestrationV2DomainEvent): boolean =>

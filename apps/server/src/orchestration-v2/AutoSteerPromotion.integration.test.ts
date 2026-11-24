@@ -3,6 +3,7 @@ import {
   CommandId,
   EventId,
   MessageId,
+  NodeId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -375,6 +376,136 @@ it.effect("auto-steer reads only queued and active runs, and still finds the pro
       targetRunId: f.active.id,
     });
   }).pipe(Effect.provide(layer)),
+);
+
+it.effect.each([
+  { scenario: "incoming", input: "text" },
+  { scenario: "previously queued", input: "text" },
+  { scenario: "incoming", input: "attachment" },
+  { scenario: "previously queued", input: "attachment" },
+] as const)(
+  "steers only plain text past a queued delegated completion ($scenario, $input)",
+  ({ scenario, input }) =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      const projection = yield* f.store.getThreadProjection(f.threadId);
+      const completion = projection.messages.find(
+        (message) => message.id === f.first.userMessageId,
+      )!;
+      yield* f.events.writeWithEffects({
+        events: [
+          f.event({
+            ...f.base,
+            type: "message.updated",
+            runId: f.first.id,
+            payload: {
+              ...completion,
+              createdBy: "agent",
+              creationSource: "server",
+              delegatedCompletion: {
+                parentRunId: f.active.id,
+                generation: 1,
+                taskIds: [NodeId.make("delegated-task:auto-promotion")],
+              },
+            },
+          }),
+        ],
+        effects: [],
+      });
+      const attachments =
+        input === "attachment"
+          ? [
+              {
+                type: "image",
+                id: "screenshot",
+                name: "image.png",
+                mimeType: "image/png",
+                sizeBytes: 10,
+              } as const,
+            ]
+          : [];
+      let messageId = f.second.userMessageId;
+      if (scenario === "incoming") {
+        messageId = MessageId.make("message:auto-promotion:agent");
+        yield* f.engine.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("send:auto-promotion:agent"),
+          threadId: f.threadId,
+          messageId,
+          text: "The job finished.",
+          attachments,
+          dispatchMode: { type: "start_immediately" },
+          deliveryIntent: "auto",
+          createdBy: "agent",
+          creationSource: "mcp",
+        });
+      } else {
+        const queuedMessage = projection.messages.find((message) => message.id === messageId)!;
+        yield* f.events.writeWithEffects({
+          events: [
+            f.event({
+              ...f.base,
+              type: "run.updated",
+              runId: f.second.id,
+              payload: { ...f.second, autoSteer: true },
+            }),
+            f.event({
+              ...f.base,
+              type: "message.updated",
+              runId: f.second.id,
+              payload: { ...queuedMessage, attachments },
+            }),
+          ],
+          effects: [],
+        });
+        const records = yield* readAutoSteerRecords(f.store, f.threadId);
+        assert.ok(records);
+        const promotion = nextAutoSteerPromotion(records);
+        assert.deepEqual(
+          promotion,
+          input === "text" ? { queuedRunId: f.second.id, targetRunId: f.active.id } : null,
+        );
+        const dispatch = f.engine.dispatch({
+          type: "queued-message.promote-to-steer",
+          commandId: CommandId.make("server:auto-steer:past-completion"),
+          threadId: f.threadId,
+          queuedRunId: f.second.id,
+          targetRunId: f.active.id,
+        });
+        if (input === "text") {
+          yield* dispatch;
+        } else {
+          const rejected = yield* Effect.result(dispatch);
+          assert.isTrue(Result.isFailure(rejected));
+          const laterMessageId = MessageId.make("message:auto-promotion:later");
+          yield* f.engine.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("send:auto-promotion:later"),
+            threadId: f.threadId,
+            messageId: laterMessageId,
+            text: "Follow-up",
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+            deliveryIntent: "auto",
+            createdBy: "user",
+            creationSource: "web",
+          });
+          const afterLater = yield* f.store.getThreadProjection(f.threadId);
+          assert.equal(
+            afterLater.runs.find((run) => run.userMessageId === laterMessageId)?.status,
+            "queued",
+          );
+        }
+      }
+      const after = yield* f.store.getThreadProjection(f.threadId);
+      const deliveredRunId = after.messages.find((message) => message.id === messageId)?.runId;
+      if (input === "text") {
+        assert.equal(deliveredRunId, f.active.id);
+      } else {
+        assert.equal(after.runs.find((run) => run.id === deliveredRunId)?.status, "queued");
+      }
+      assert.equal(after.runs.find((run) => run.id === f.first.id)?.status, "queued");
+    }).pipe(Effect.provide(layer)),
 );
 
 it.effect("manual promotion still consumes ordinary input without automatic opt-in", () =>

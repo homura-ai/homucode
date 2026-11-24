@@ -1,4 +1,5 @@
 import type { OrchestrationV2Run, OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import { modelSelectionsEqual } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 
 export function isAutomaticCompletionRun(
@@ -8,6 +9,26 @@ export function isAutomaticCompletionRun(
   return projection.messages.some(
     (message) => message.id === run.userMessageId && message.delegatedCompletion !== undefined,
   );
+}
+
+export function queuedMessageHeadForSteering(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages">,
+  targetRunId: OrchestrationV2Run["id"],
+): OrchestrationV2Run | undefined {
+  const ordered = queuedRunsInDeliveryOrder(projection);
+  const head = ordered[0];
+  if (head === undefined || !isAutomaticCompletionRun(projection, head)) return head;
+
+  const candidate = ordered.find((run) => !isAutomaticCompletionRun(projection, run));
+  const message = projection.messages.find((message) => message.id === candidate?.userMessageId);
+  const target = projection.runs.find((run) => run.id === targetRunId);
+  return candidate !== undefined &&
+    target !== undefined &&
+    message?.attachments.length === 0 &&
+    message.followsThreadSelection !== true &&
+    modelSelectionsEqual(candidate.modelSelection, target.modelSelection)
+    ? candidate
+    : head;
 }
 
 export function queuedRunsInDeliveryOrder(
