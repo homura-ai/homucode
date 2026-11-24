@@ -2602,11 +2602,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       };
       if (queuedRun.modelCooldownUntil !== undefined) {
         const now = yield* DateTime.now;
-        const nowMs = DateTime.toEpochMillis(now);
-        if (Date.parse(queuedRun.modelCooldownUntil) > nowMs) return;
-        const retryAt = yield* modelCooldowns.recheck(modelSelection);
-        if (retryAt === undefined) return;
-        if (retryAt !== null) {
+        const storedDeadline = queuedRun.modelCooldownUntil;
+        const retryAt =
+          Date.parse(storedDeadline) > DateTime.toEpochMillis(now)
+            ? storedDeadline
+            : yield* modelCooldowns.recheck(modelSelection);
+        if (retryAt !== undefined && retryAt !== null && retryAt !== storedDeadline) {
           yield* writeSystemEvents([
             {
               type: "run.updated",
@@ -2617,7 +2618,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               payload: { ...storedQueuedRun, modelCooldownUntil: retryAt },
             },
           ]);
-          return;
+        }
+        if (retryAt !== null) {
+          return "model-cooldown" as const;
         }
       }
       // A limited provider would fail and consume every waiting message.
@@ -3457,12 +3460,32 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   );
 
   // A provider failure hold leaves buffered wakes unheld, so a second pass starts the first one.
-  const startNextQueuedRun = (...args: Parameters<typeof startNextQueuedRunOnce>) =>
-    startNextQueuedRunOnce(...args).pipe(
-      Effect.flatMap((wakeLeftUnheld) =>
-        wakeLeftUnheld === true ? startNextQueuedRunOnce(args[0]) : Effect.void,
-      ),
-    );
+  const startNextQueuedRun = Effect.fn("Orchestrator.advanceQueuedRun")(function* (
+    ...args: Parameters<typeof startNextQueuedRunOnce>
+  ) {
+    const outcome = yield* startNextQueuedRunOnce(...args);
+    if (outcome === true) {
+      yield* startNextQueuedRunOnce(args[0]);
+      return;
+    }
+    return outcome;
+  });
+
+  const startUserQueuedRun = Effect.fn("Orchestrator.startUserQueuedRun")(function* (
+    command: Extract<OrchestrationV2ServerCommand, { type: "queue.resume" | "queued-run.start" }>,
+  ) {
+    const outcome = yield* startNextQueuedRun(command.threadId, {
+      userStarted: true,
+      ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+    }).pipe(mapDispatchError(command));
+    if (outcome === "model-cooldown" && command.type === "queued-run.start") {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "The message is still queued. It can start when its model cooldown ends.",
+      });
+    }
+  });
 
   // Under load a resumed provider can time out before taking the prompt; the restart still owes the turn.
   const retryContinuationStart = Effect.fn("Orchestrator.retryContinuationStart")(function* (
@@ -17048,12 +17071,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ),
     );
     if (command.type === "queue.resume" || command.type === "queued-run.start") {
-      yield* mapDispatchError(command)(
-        startNextQueuedRun(command.threadId, {
-          userStarted: true,
-          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-        }),
-      );
+      yield* startUserQueuedRun(command);
     }
     return {
       sequence: receipt.resultSequence,
@@ -17318,17 +17336,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandThreadId: commandThreadId(command),
       });
     }
-    if (
-      command.type === "queue.resume" ||
-      command.type === "queued-run.start" ||
-      (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined)
-    ) {
-      yield* mapDispatchError(command)(
-        startNextQueuedRun(command.threadId, {
-          userStarted: command.type !== "thread.runtime-mode.set",
-          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-        }),
-      );
+    if (command.type === "queue.resume" || command.type === "queued-run.start") {
+      yield* startUserQueuedRun(command);
+    } else if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
+      yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
     }
     if (
       command.type === "queued-run.cancel" &&
@@ -18028,7 +18039,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             threadId,
             threadDispatch.withLock(threadId, startNextQueuedRun(threadId, { endedRunId })),
           )
-          .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
+          );
       },
     ),
     recoverDelegatedTasks,

@@ -28,7 +28,7 @@ Everything HomuCode changes compared to upstream [T3 Code](https://github.com/pi
 
 ## Threads and subagents
 
-- **Codex model cooldowns.** When CLIProxyAPI reports that the selected model is cooling down on every available account, web and desktop can queue the message and show the remaining wait. The server starts it automatically when the cooldown expires.
+- **Codex model cooldowns.** When CLIProxyAPI reports that the selected model is cooling down on every available account, the server queues the message and starts it automatically when the cooldown expires. Web and desktop show the remaining wait. Mobile shows the cooldown reason if you try to start the queued message early, including from the upstream T3 Code app.
 
 - **Provider switch context.** The handoff names the source run’s model and the destination run’s selected model. When the source provider reports which model ran, the handoff uses that identifier.
 
