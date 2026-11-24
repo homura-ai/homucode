@@ -30,6 +30,7 @@ import * as Projections from "./ProjectionStore.ts";
 import * as Registry from "./ProviderAdapterRegistry.ts";
 import * as Sessions from "./ProviderSessionManager.ts";
 import * as Replay from "./testkit/ProviderReplayHarness.ts";
+import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 
 const instanceId = ProviderInstanceId.make("codex"),
   driver = ProviderDriverKind.make("codex");
@@ -463,6 +464,24 @@ it.effect.each(["start_immediately", "defer_start", "cancel"] as const)(
       assert.lengthOf(queued, 1);
       assert.equal(queued[0]?.status, "queued");
       assert.equal(queued[0]?.modelCooldownUntil, retryAt);
+      const assertManualStartBlocked = Effect.fnUntraced(function* (phase: string) {
+        const error = yield* engine
+          .dispatch({
+            type: "queued-run.start",
+            commandId: CommandId.make(`start:model-cooldown:${phase}`),
+            threadId,
+            runId: queued[0]!.id,
+          })
+          .pipe(Effect.flip);
+        assert.equal(
+          userFacingDispatchErrorMessage(error),
+          "The message is still queued. It can start when its model cooldown ends.",
+        );
+        assert.equal((yield* readRuns)[0]?.status, "queued");
+      });
+      if (scenario === "start_immediately") {
+        yield* assertManualStartBlocked("original");
+      }
       if (scenario === "cancel") {
         const nextMessageId = MessageId.make("message:model-cooldown:next");
         yield* engine.dispatch({
@@ -497,7 +516,11 @@ it.effect.each(["start_immediately", "defer_start", "cancel"] as const)(
       yield* engine.resumeModelCooldownQueue;
       assert.equal((yield* readRuns)[0]?.status, "queued");
       freshDeadline = extendedRetryAt;
-      yield* engine.resumeModelCooldownQueue;
+      if (scenario === "start_immediately") {
+        yield* assertManualStartBlocked("extended");
+      } else {
+        yield* engine.resumeModelCooldownQueue;
+      }
       assert.equal((yield* readRuns)[0]?.modelCooldownUntil, extendedRetryAt);
       yield* TestClock.adjust("1 minute");
       freshDeadline = null;
