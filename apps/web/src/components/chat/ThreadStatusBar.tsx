@@ -51,6 +51,7 @@ type StatusLineResult =
       readonly error: string | null;
       /** The name the script was given, to write out where the line shortens it. */
       readonly modelName: string | null;
+      readonly environmentId: EnvironmentId;
     }
   | {
       readonly stats: StatusLineStats;
@@ -344,6 +345,19 @@ function StatusLineRow(props: {
   );
 }
 
+function useStatusLineBurnSmoothing(environmentId: EnvironmentId) {
+  const config = serverEnvironment.configValueAtom(environmentId);
+  const statusLineSessionBurnTauMinutes = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineSessionBurnTauMinutes,
+  );
+  const statusLineWeeklyBurnTauMinutes = useAtomValue(
+    config,
+    (value) => value?.settings.statusLineWeeklyBurnTauMinutes,
+  );
+  return { statusLineSessionBurnTauMinutes, statusLineWeeklyBurnTauMinutes };
+}
+
 /** Runs the environment's status line command for a thread, the way Claude Code draws its status line. */
 export function ThreadStatusLineRunner(props: {
   readonly statusLineKey: string;
@@ -396,6 +410,7 @@ export function ThreadStatusLineRunner(props: {
     showSessionDepletionRatio,
     showWeeklyDepletionRatio,
     accounting,
+    ...useStatusLineBurnSmoothing(environmentId),
   };
   // Only the mode in use reads the thread's state; the other key stays empty.
   const inputKey = custom ? JSON.stringify(buildStatusLineInput(source)) : "";
@@ -438,6 +453,7 @@ export function ThreadStatusLineRunner(props: {
             lines: parseAnsiLines(response.value.text),
             error: response.value.error ?? null,
             modelName,
+            environmentId,
           });
         } else if (quickRetries > 0) {
           quickRetries = quickRetries - 1;
@@ -556,7 +572,8 @@ function HeaderStatusLine(props: {
   useLayoutEffect(() => keepBodyFont(containerRef.current));
   const drawn = "stats" in result;
   const failed = !drawn && result.lines.length === 0;
-  const usage = showAllModels && props.usage ? { ...props.usage, nowMs } : null;
+  const smoothing = useStatusLineBurnSmoothing(result.environmentId);
+  const usage = showAllModels && props.usage ? { ...props.usage, ...smoothing, nowMs } : null;
   const measure = (line: HTMLElement) => {
     const bar = line.offsetParent?.getBoundingClientRect().left ?? 0;
     setLeft(line.getBoundingClientRect().left - bar);

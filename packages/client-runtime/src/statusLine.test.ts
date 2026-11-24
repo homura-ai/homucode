@@ -407,6 +407,11 @@ describe("buildStatusLineInput", () => {
               resetsAt: reset,
               windowDurationMins: 180,
               burnRatePercentPerSecond: (10 + index * 10) / 3_600,
+              burnRateInterval: {
+                elapsedMs: 60 * 60_000,
+                previousRate: (10 + index * 10) / 3_600,
+                observedRate: 0,
+              },
             },
             {
               id: "seven_day",
@@ -467,6 +472,49 @@ describe("buildStatusLineInput", () => {
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
       seven_day: { used_percentage: 70 },
     });
+    const fastSmoothing = {
+      ...routed,
+      statusLineSessionBurnTauMinutes: 15,
+      statusLineWeeklyBurnTauMinutes: 720,
+      usageLimitSources: [
+        {
+          ...hub,
+          accounts: hub.accounts.map((account) => ({
+            ...account,
+            usageLimits: {
+              ...account.usageLimits,
+              windows: account.usageLimits.windows.map((window) =>
+                window.kind === "weekly"
+                  ? {
+                      ...window,
+                      resetsAt: reset,
+                      burnRateInterval: {
+                        elapsedMs: 720 * 60_000,
+                        previousRate: 40 / 3_600,
+                        observedRate: 0,
+                      },
+                    }
+                  : window,
+              ),
+            },
+          })),
+        },
+      ],
+    };
+    const slowSession = { ...fastSmoothing, statusLineSessionBurnTauMinutes: 120 };
+    const slowWeekly = { ...fastSmoothing, statusLineWeeklyBurnTauMinutes: 2880 };
+    const projected = (input: typeof fastSmoothing) => {
+      const { fiveHour, weekly } = buildStatusLineStats(input);
+      return [fiveHour?.projectedRemainingPercent, weekly?.projectedRemainingPercent];
+    };
+    expect(projected(fastSmoothing)).toEqual([50, 15]);
+    expect(projected(slowSession)).toEqual([41, 15]);
+    expect(projected(slowWeekly)).toEqual([50, -1]);
+    expect(
+      buildStatusLineModelUsage(slowWeekly)[0]
+        ?.limits.slice(0, 2)
+        .map((limit) => limit.projectedRemainingPercent),
+    ).toEqual(projected(slowWeekly));
     const incompleteTiers = {
       ...routed,
       usageLimitSources: [

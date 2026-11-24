@@ -1,8 +1,13 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest keeps the on-disk key a pure function.
 import * as NodeCrypto from "node:crypto";
 
-import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@t3tools/contracts";
+import {
+  type ServerProviderUsageLimits,
+  type ServerProviderUsageWindow,
+  UsageBurnRateInterval,
+} from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
+import { smoothUsageBurnRate } from "@t3tools/shared/usageLimits";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -20,6 +25,7 @@ const Sample = Schema.fromJsonString(
     sampledAtMs: Schema.Finite,
     usedPercent: Schema.Finite,
     rate: Schema.Finite,
+    interval: Schema.optionalKey(UsageBurnRateInterval),
   }),
 );
 type Sample = typeof Sample.Type;
@@ -81,21 +87,41 @@ const make = Effect.gen(function* () {
       previous !== null && Math.abs(resetMs - previous.resetMs) <= RESET_TOLERANCE_MS;
     const dtMs = previous === null ? Infinity : observedAtMs - previous.sampledAtMs;
     if (previous !== null && dtMs < 0) return window;
+    const previousRate = sameWindow
+      ? previous.interval === undefined
+        ? previous.rate
+        : smoothUsageBurnRate(previous.interval, tauMinutes)
+      : 0;
     if (sameWindow && dtMs < MINUTE_MS) {
-      return { ...window, burnRatePercentPerSecond: previous.rate };
+      return {
+        ...window,
+        burnRatePercentPerSecond: previousRate,
+        ...(previous.interval === undefined ? {} : { burnRateInterval: previous.interval }),
+      };
     }
 
     const elapsedSeconds = (observedAtMs - resetMs + windowMinutes * MINUTE_MS) / 1000;
-    const dtSeconds = dtMs / 1000;
-    const rate = sameWindow
-      ? previous.rate +
-        -Math.expm1(-dtMs / (tauMinutes * MINUTE_MS)) *
-          (Math.max(0, (usedPercent - previous.usedPercent) / dtSeconds) - previous.rate)
-      : elapsedSeconds > 0
-        ? usedPercent / elapsedSeconds
-        : 0;
+    const interval = sameWindow
+      ? {
+          elapsedMs: dtMs,
+          previousRate,
+          observedRate: Math.max(0, (usedPercent - previous.usedPercent) / (dtMs / 1000)),
+        }
+      : undefined;
+    const rate =
+      interval !== undefined
+        ? smoothUsageBurnRate(interval, tauMinutes)
+        : elapsedSeconds > 0
+          ? usedPercent / elapsedSeconds
+          : 0;
     if (dtMs >= MINUTE_MS) {
-      const next = { resetMs, sampledAtMs: observedAtMs, usedPercent, rate };
+      const next = {
+        resetMs,
+        sampledAtMs: observedAtMs,
+        usedPercent,
+        rate,
+        ...(interval === undefined ? {} : { interval }),
+      };
       samples.set(key, next);
       yield* encodeSample(next).pipe(
         Effect.flatMap((contents) => writeFileStringAtomically({ filePath, contents })),
@@ -104,7 +130,11 @@ const make = Effect.gen(function* () {
         Effect.ignore({ log: true }),
       );
     }
-    return { ...window, burnRatePercentPerSecond: rate };
+    return {
+      ...window,
+      burnRatePercentPerSecond: rate,
+      ...(interval === undefined ? {} : { burnRateInterval: interval }),
+    };
   });
 
   return {

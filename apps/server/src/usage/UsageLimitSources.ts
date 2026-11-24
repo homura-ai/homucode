@@ -291,8 +291,16 @@ export const make = Effect.gen(function* () {
     return result;
   }, refreshLock.withPermits(1));
 
-  yield* settingsService.streamChanges.pipe(
-    Stream.map((settings) => settings.usageLimitSources),
+  const settingsChanges = yield* settingsService.subscribeChanges;
+  yield* Stream.concat(
+    Stream.fromEffect(
+      settingsService.getSettings.pipe(
+        Effect.map((settings) => settings.usageLimitSources),
+        Effect.orElseSucceed(() => ({})),
+      ),
+    ),
+    settingsChanges.pipe(Stream.map((settings) => settings.usageLimitSources)),
+  ).pipe(
     Stream.changes,
     Stream.runForEach(() => refresh),
     Effect.forkScoped,
@@ -317,8 +325,6 @@ export const make = Effect.gen(function* () {
       Effect.ignoreCause({ log: true }),
     ),
   ).pipe(Effect.forkScoped);
-
-  yield* refresh.pipe(Effect.forkScoped);
 
   return {
     current: Ref.get(stateRef),
