@@ -339,7 +339,9 @@ images. **Steer now** sends a queued message into the running turn. When the thr
 idle, it starts a turn with the queued message. You can also edit or remove it.
 
 When Claude reports which messages it reads, **Send now** appears below a waiting steer. Use it to
-interrupt the current work. HomuCode resends any steers Claude drops unread.
+interrupt the current work. On supported Claude versions, HomuCode stops a foreground Bash command
+directly or tells Claude to make room for the steer within the current session. HomuCode resends any
+steers Claude drops unread.
 
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. For stopped runs and usage limits,

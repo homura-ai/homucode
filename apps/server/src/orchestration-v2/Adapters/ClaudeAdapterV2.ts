@@ -760,6 +760,7 @@ export interface ClaudeAgentSdkQuerySession {
     ClaudeAgentSdkQueryRunnerError
   >;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly sendNow?: (messageUuid: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
 
@@ -963,11 +964,11 @@ function closeClaudeQuery(queryRuntime: ClaudeQuery) {
   });
 }
 
-// SDK 0.3.316 types `mcp_call` and `list_permission_rules` but has no Query method for them; its own readMcpResource sends control requests this way.
+// The SDK's readMcpResource uses the same control transport for requests without a public Query method.
 async function sendClaudeControlRequest(
   queryRuntime: ClaudeQuery,
   request: {
-    readonly subtype: "mcp_call" | "list_permission_rules" | "rename_session";
+    readonly subtype: "mcp_call" | "list_permission_rules" | "rename_session" | "interrupt";
     readonly [key: string]: unknown;
   },
 ): Promise<unknown> {
@@ -1217,6 +1218,14 @@ export type ClaudeAgentSdkProtocolLogEvent =
       readonly stage: "decoded";
       readonly payload: {
         readonly type: "query.interrupt";
+      };
+    }
+  | {
+      readonly direction: "outgoing";
+      readonly stage: "decoded";
+      readonly payload: {
+        readonly type: "query.send_now";
+        readonly messageUuid: string;
       };
     }
   | {
@@ -1974,6 +1983,24 @@ export const layerQueryRunner: Layer.Layer<
             }),
           ),
         ),
+        sendNow: (messageUuid) =>
+          Effect.tryPromise({
+            try: () =>
+              sendClaudeControlRequest(queryRuntime, {
+                subtype: "interrupt",
+                send_now: true,
+                message_uuid: messageUuid,
+              }),
+            catch: (cause) => queryRunnerError(cause, "sendNow"),
+          }).pipe(
+            Effect.andThen(
+              logProtocolEvent({
+                direction: "outgoing",
+                stage: "decoded",
+                payload: { type: "query.send_now", messageUuid },
+              }),
+            ),
+          ),
         // A job started since the last poll is recorded before the CLI is told to exit.
         close: Effect.suspend(() => (processExited ? Effect.void : refreshDescendants)).pipe(
           Effect.andThen(Queue.shutdown(promptQueue)),
@@ -5166,6 +5193,7 @@ interface ActiveClaudeTurnContext {
   } | null;
   compactionTokens: number | undefined;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
+  readonly foregroundBashTasks: Map<string, string>;
   // A successful status can precede the boundary that supplies its token counts.
   compaction: Extract<OrchestrationV2TurnItem, { type: "compaction" }> | null;
   readonly ignoredTaskIds: Set<string>;
@@ -12274,6 +12302,29 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const message = input.message;
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          if (context !== null && liveQuery?.query === input.query && message.type === "system") {
+            const foreground = context.foregroundBashTasks;
+            if (message.subtype === "task_started" && message.task_type === "local_bash") {
+              if (message.is_backgrounded === false && message.tool_use_id !== undefined) {
+                foreground.set(message.task_id, message.tool_use_id);
+              } else {
+                foreground.delete(message.task_id);
+              }
+            } else if (
+              message.subtype === "task_notification" ||
+              (message.subtype === "task_updated" && message.patch.is_backgrounded === true)
+            ) {
+              foreground.delete(message.task_id);
+            } else if (foreground.size > 0 && isClaudeBackgroundTasksChangedMessage(message)) {
+              const tasks = Reflect.get(message, "tasks");
+              if (Array.isArray(tasks)) {
+                for (const task of tasks) {
+                  const taskId = field(task, "task_id");
+                  if (typeof taskId === "string") foreground.delete(taskId);
+                }
+              }
+            }
+          }
           // The API answering again is recovery; a long text or tool input block emits nothing
           // else. Judged here, in arrival order: held and buffered frames are handled later.
           if (
@@ -13606,6 +13657,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               streamUsage: null,
               compactionTokens: undefined,
               toolCalls: new Map(),
+              foregroundBashTasks: new Map(),
               compaction: null,
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),
@@ -13903,14 +13955,41 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ) {
                 return;
               }
+              const pending = Array.from(currentTurn.pendingSteers).find(
+                ([, steer]) =>
+                  steer.messageId === sendSteer.messageId && canTrackClaudeSteers(steer.liveQuery),
+              );
+              if (pending === undefined) {
+                sendSteer.onTurnKeptOpen();
+                return;
+              }
+              const [messageUuid, steer] = pending;
               if (
-                !Array.from(currentTurn.pendingSteers.values()).some(
-                  (steer) =>
-                    steer.messageId === sendSteer.messageId &&
-                    canTrackClaudeSteers(steer.liveQuery),
-                )
+                existing === steer.liveQuery &&
+                !existing.stopping &&
+                existing.capabilities.has("interrupt_send_now_v1") &&
+                existing.query.sendNow !== undefined
               ) {
-                sendSteer.onSkipped();
+                const [toolCall] = currentTurn.toolCalls.values();
+                const taskId =
+                  currentTurn.toolCalls.size === 1 && toolCall?.toolName === "Bash"
+                    ? Array.from(currentTurn.foregroundBashTasks).find(
+                        ([, toolUseId]) => toolUseId === toolCall.nativeItemId,
+                      )?.[0]
+                    : undefined;
+                if (taskId !== undefined) {
+                  const stopped = yield* existing.query.stopTask(taskId).pipe(
+                    Effect.as(true),
+                    Effect.orElseSucceed(() => false),
+                    Effect.timeout("2 seconds"),
+                  );
+                  if (stopped || !currentTurn.pendingSteers.has(messageUuid)) {
+                    sendSteer.onTurnKeptOpen();
+                    return;
+                  }
+                }
+                yield* existing.query.sendNow(messageUuid).pipe(Effect.timeout("10 seconds"));
+                sendSteer.onTurnKeptOpen();
                 return;
               }
               currentTurn.resendUnreadSteers = true;

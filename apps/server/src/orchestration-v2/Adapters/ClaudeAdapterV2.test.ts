@@ -3576,6 +3576,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const makeWakeHarnessWithOptions = (options?: {
     readonly close?: (sdkMessages: Queue.Queue<SDKMessage>) => Effect.Effect<void>;
     readonly interrupt?: Effect.Effect<void, ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError>;
+    readonly sendNow?: NonNullable<ClaudeAdapterV2.ClaudeAgentSdkQuerySession["sendNow"]>;
     readonly setPermissionMode?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["setPermissionMode"];
     readonly setModel?: (
       model: string,
@@ -3779,6 +3780,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 listPermissionRules: options?.mcp?.listPermissionRules ?? Effect.succeed([]),
                 stopTask: options?.stopTask ?? (() => Effect.void),
                 interrupt: options?.interrupt ?? Effect.void,
+                ...(options?.sendNow === undefined ? {} : { sendNow: options.sendNow }),
                 close: options?.close?.(sdkMessages) ?? Effect.void,
               };
             }),
@@ -5798,6 +5800,30 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       title: "Send now redelivers an unread steer with automatic recovery off",
     },
     {
+      readBy: "none",
+      echoes: true,
+      enabled: false,
+      force: true,
+      live: "task",
+      title: "Send now stops a foreground Bash task on the existing Claude query",
+    },
+    {
+      readBy: "none",
+      echoes: true,
+      enabled: false,
+      force: true,
+      live: "task-timeout",
+      title: "Send now keeps the query on a task timeout",
+    },
+    {
+      readBy: "none",
+      echoes: true,
+      enabled: false,
+      force: true,
+      live: "native",
+      title: "Send now targets the waiting steer on the existing Claude query",
+    },
+    {
       readBy: "assistant",
       echoes: true,
       enabled: false,
@@ -5811,11 +5837,26 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       force: true,
       title: "Send now leaves the turn running if Claude cannot confirm which steers it read",
     },
-  ])("$title", ({ readBy, echoes, enabled, force }) =>
+  ])("$title", ({ readBy, echoes, enabled, force, live }) =>
     Effect.gen(function* () {
+      const stoppedTasks: string[] = [];
+      const promoted: string[] = [];
+      const stoppingTask = yield* Deferred.make<void>();
       const harness = yield* makeWakeHarnessWithOptions({
         close: (sdkMessages) => Queue.shutdown(sdkMessages),
         freshQueueOnReopen: true,
+        stopTask: (taskId) =>
+          Effect.sync(() => stoppedTasks.push(taskId)).pipe(
+            Effect.andThen(
+              live === "task-timeout"
+                ? Deferred.succeed(stoppingTask, undefined).pipe(Effect.andThen(Effect.never))
+                : Effect.void,
+            ),
+          ),
+        sendNow: (messageUuid) =>
+          Effect.sync(() => {
+            promoted.push(messageUuid);
+          }),
       });
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const firstInput = makeClaudeTestTurnInput({
@@ -5827,6 +5868,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         attachments: [],
       });
       yield* harness.runtime.startTurn(firstInput);
+      if (live !== undefined) {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({ ...wakeTurnInit, capabilities: ["interrupt_send_now_v1"] }),
+        );
+      }
       const providerTurnId = idAllocator.derive.providerTurn({
         driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
         nativeTurnId: `turn:${firstInput.attemptId}`,
@@ -5868,6 +5914,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           session_id: WAKE_NATIVE_SESSION,
         }),
       );
+      if (live === "native") {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_updated",
+            task_id: "task-unread-steer-bash",
+            patch: { is_backgrounded: true },
+            uuid: "00000000-0000-4000-8000-000000015706",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      }
       const steerText = "Codeword: PELICAN. Remember it, I will ask for it later.";
       yield* harness.runtime.steerTurn({
         threadId: harness.threadId,
@@ -5918,23 +5976,67 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
       }
       const eventsBefore = harness.events.length;
-      let skipped = false;
-      yield* harness.runtime.interruptTurn({
+      let turnKeptOpen = false;
+      const interrupt = harness.runtime.interruptTurn({
         providerThread: harness.providerThread,
         providerTurnId,
         ...(force
           ? {
               sendSteer: {
                 messageId: MessageId.make("unread-steer"),
-                onSkipped: () => {
-                  skipped = true;
+                onTurnKeptOpen: () => {
+                  turnKeptOpen = true;
                 },
               },
             }
           : {}),
       });
+      if (live === "task-timeout") {
+        const stopping = yield* Effect.exit(interrupt).pipe(Effect.forkScoped);
+        yield* Deferred.await(stoppingTask);
+        yield* TestClock.adjust("2 seconds");
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(stopping)));
+        assert.deepStrictEqual(stoppedTasks, ["task-unread-steer-bash"]);
+        assert.deepStrictEqual(promoted, []);
+        assert.isFalse(harness.events.some((event) => event.type === "turn.terminal"));
+        return;
+      }
+      yield* interrupt;
+      if (live !== undefined) {
+        assert.deepStrictEqual(stoppedTasks, live === "task" ? ["task-unread-steer-bash"] : []);
+        assert.deepStrictEqual(promoted, live === "native" ? [steerUuid] : []);
+        assert.isTrue(turnKeptOpen, "The server must let the active query deliver the steer.");
+        if (live === "native") {
+          yield* harness.offerAndWait(
+            makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000015704",
+              result: "",
+              terminalReason: "aborted_streaming",
+            }),
+          );
+        }
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: steerUuid,
+            state: "started",
+            uuid: "00000000-0000-4000-8000-000000015705",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* harness.until(() =>
+          harness.events.some(
+            (event) =>
+              event.type === "steer.updated" &&
+              event.messageId === MessageId.make("unread-steer") &&
+              event.status === "completed",
+          ),
+        );
+        assert.isFalse(harness.events.some((event) => event.type === "turn.terminal"));
+        return;
+      }
       if (force && (readBy === "assistant" || !echoes)) {
-        assert.isTrue(skipped);
+        assert.isTrue(turnKeptOpen);
         assert.lengthOf(harness.events, eventsBefore);
         return;
       }
@@ -5946,12 +6048,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           providerTurnId,
           sendSteer: {
             messageId: MessageId.make("unread-steer"),
-            onSkipped: () => {
-              skipped = true;
+            onTurnKeptOpen: () => {
+              turnKeptOpen = true;
             },
           },
         });
-        assert.isFalse(skipped, "The server must still confirm terminal state for this turn.");
+        assert.isFalse(turnKeptOpen, "The server must still confirm terminal state for this turn.");
       }
 
       const redelivered = harness.events

@@ -334,7 +334,7 @@ export const layer: Layer.Layer<
             });
           }
           // Settled turns still reach adapters, which alone know whether background work remains.
-          let skipped = false;
+          let turnKeptOpen = false;
           yield* session.value
             .interruptTurn({
               providerThread: loaded.providerThread,
@@ -345,8 +345,8 @@ export const layer: Layer.Layer<
                 : {
                     sendSteer: {
                       messageId: input.sendSteerMessageId,
-                      onSkipped: () => {
-                        skipped = true;
+                      onTurnKeptOpen: () => {
+                        turnKeptOpen = true;
                       },
                     },
                   }),
@@ -365,7 +365,7 @@ export const layer: Layer.Layer<
                   ),
               }),
             );
-          if (!skipped && loaded.providerTurn.status === "running") {
+          if (!turnKeptOpen && loaded.providerTurn.status === "running") {
             // Let native terminal ingestion finalize the attempt before the Stop follow-up repairs it.
             const { runAttemptId } = loaded.providerTurn;
             const settled = yield* awaitSettled(input.threadId, {
