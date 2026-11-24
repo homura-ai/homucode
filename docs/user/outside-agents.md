@@ -168,6 +168,10 @@ options.
 2 when the agent waits for an answer you give in the app. Add `--json` for a
 result that always includes the thread id.
 
+`t3 thread stop THREAD` stops the active turn and delegated tasks, holds queued
+messages, and ends pull request watches for that thread. Add `--json` for the
+stop status and the interrupted run ID, if any.
+
 `t3 thread organize THREAD ACTION` runs the thread menu's actions: pin, unpin,
 reorder-pin, snooze (`--until`), settle, archive and their reverses, mark-read,
 mark-unread, move-project (`--project`, an id or a folder inside it),

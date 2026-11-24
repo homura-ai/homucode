@@ -615,6 +615,61 @@ it.effect("send passes --mode to t3_thread_send and keeps queue as the default",
   ),
 );
 
+it.effect("stop requests a full thread stop even when there is no active run", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-thread-stop-" });
+    yield* persistServerRuntimeState({
+      path: path.join(baseDir, "userdata", "server-runtime.json"),
+      state: yield* makePersistedServerRuntimeState({
+        config: { host: "127.0.0.1", devUrl: undefined },
+        port: 3_773,
+      }),
+    });
+    const result = { threadId, runId, status: "interrupt_requested" };
+    const call = vi
+      .fn<McpBridge.McpToolSession["call"]>()
+      .mockReturnValueOnce(Effect.succeed({ structuredContent: result }))
+      .mockReturnValueOnce(
+        Effect.succeed({ structuredContent: { threadId, runId: null, status: "no_active_run" } }),
+      );
+    using _session = vi
+      .spyOn(McpBridge, "mcpToolSession")
+      .mockReturnValue(Effect.succeed({ call }));
+
+    const stop = (...flags: string[]) =>
+      Command.runWith(threadCommand, { version: "0.0.0" })([
+        "stop",
+        threadId,
+        "--base-dir",
+        baseDir,
+        ...flags,
+      ]);
+    yield* stop("--json");
+    yield* stop();
+
+    assert.deepStrictEqual(call.mock.calls, [
+      ["t3_thread_interrupt", { threadId, stop: true }],
+      ["t3_thread_interrupt", { threadId, stop: true }],
+    ]);
+    assert.deepStrictEqual((yield* TestConsole.logLines).slice(-2), [
+      JSON.stringify(result),
+      "Stop requested. No active run.",
+    ]);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        NetService.layer,
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_PORT: "3773" } })),
+      ),
+    ),
+  ),
+);
+
 it.effect("configure sets the permission mode, then prints the thread's modes", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
