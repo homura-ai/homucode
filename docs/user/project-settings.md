@@ -241,9 +241,9 @@ Fast worktree checkout is a beta for macOS and for Linux on a filesystem with re
 Btrfs or XFS. Turn it on for each machine in **Settings → Labs → Fast worktree checkout**; the
 setting appears only on machines that support it. T3 Code then keeps a few recent checkouts of each
 repository in the `caches` folder of the T3 home directory. A new worktree is cloned from one of
-them copy-on-write (APFS clones on macOS, reflinks on Linux), which is about twice as fast as
-writing every file, makes the first `git status` in it fast as well, and lets worktrees share disk
-space until their files change. Turning it off deletes the cache.
+them copy-on-write (APFS clones on macOS, reflinks on Linux), so worktrees share disk space until
+their files change and the first `git status` in one is fast. On macOS this is also about twice as
+fast as writing every file. Turning it off deletes the cache.
 
 The first worktree of a repository uses Git's normal checkout and fills the cache. It needs Git 2.42
 or newer. Git's normal checkout is also used for worktrees on a different drive from the T3 home

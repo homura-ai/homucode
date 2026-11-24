@@ -76,18 +76,21 @@ const reflinkCopy = Effect.fn("CheckoutCloner.reflink")(function* (
   source: string,
   destination: string,
 ) {
-  yield* Effect.tryPromise({
-    try: () =>
-      execFile("cp", [
-        "-a",
-        "--reflink=always",
-        "--no-target-directory",
-        "--",
-        source,
-        destination,
-      ]),
-    catch: (cause) => new CheckoutCloneError({ source, destination, cause }),
-  });
+  // A cancel waits for cp to exit, so rollback never races its writes.
+  yield* Effect.uninterruptible(
+    Effect.tryPromise({
+      try: () =>
+        execFile("cp", [
+          "-a",
+          "--reflink=always",
+          "--no-target-directory",
+          "--",
+          source,
+          destination,
+        ]),
+      catch: (cause) => new CheckoutCloneError({ source, destination, cause }),
+    }),
+  );
 });
 
 /** macOS `clonefile(2)` or Linux reflinks, which clone a folder hierarchy; elsewhere nothing. */
