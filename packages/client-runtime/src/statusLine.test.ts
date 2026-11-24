@@ -486,7 +486,13 @@ describe("buildStatusLineInput", () => {
         },
       ],
     };
-    expect(buildStatusLineStats(incompleteTiers).weekly).toBeNull();
+    expect(buildStatusLineStats(incompleteTiers)).toMatchObject({
+      weekly: null,
+      weeklyAccounts: [
+        { label: "AE", remainingPercent: 75 },
+        { label: "BE", remainingPercent: 25 },
+      ],
+    });
     expect(buildStatusLineInput(incompleteTiers).rate_limits).toEqual({
       five_hour: { used_percentage: 50, resets_at: Date.parse(reset) / 1000 },
     });
@@ -968,6 +974,7 @@ describe("buildStatusLineInput", () => {
         usedPercent: 47.4,
       },
       weekly: { remainingPercent: 57, projectedRemainingPercent: null, resetsAtMs: null },
+      weeklyAccounts: [],
       cachePercent: 99,
       inputTokens: 338_000,
       outputTokens: 21_400,

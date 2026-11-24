@@ -201,27 +201,35 @@ function CompactLabel(props: { readonly label: string; readonly short: string })
   );
 }
 
-function useStatusDialVisibility(hasContext: boolean, hasWeekly: boolean, hasFiveHour: boolean) {
+function useStatusDialVisibility(hasContext: boolean, weeklyKey: string, hasFiveHour: boolean) {
   const rowRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<HTMLSpanElement>(null);
   const weeklyRef = useRef<HTMLSpanElement>(null);
   const fiveHourRef = useRef<HTMLSpanElement>(null);
-  const [visibility, setVisibility] = useState({ weekly: true, fiveHour: true });
+  const [visibility, setVisibility] = useState({
+    weekly: Number.POSITIVE_INFINITY,
+    fiveHour: true,
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures rendered dial widths to keep weekly ahead of the 5-hour dial
   useLayoutEffect(() => {
     const row = rowRef.current;
     if (row === null) return;
     const context = hasContext ? contextRef.current : null;
-    const { current: weekly } = weeklyRef;
+    const weekly = weeklyKey === "" ? [] : Array.from(weeklyRef.current?.children ?? []);
     const { current: fiveHour } = fiveHourRef;
     const measure = () => {
       const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
-      const width = (element: HTMLSpanElement | null) =>
+      const width = (element: Element | null) =>
         element === null ? 0 : element.getBoundingClientRect().width + gap;
-      const room = row.getBoundingClientRect().width + gap - width(context);
-      const weeklyWidth = width(weekly);
-      const showWeekly = hasWeekly && weeklyWidth <= room;
-      const showFiveHour = hasFiveHour && width(fiveHour) <= room - (showWeekly ? weeklyWidth : 0);
+      let room = row.getBoundingClientRect().width + gap - width(context);
+      let showWeekly = 0;
+      for (const dial of weekly) {
+        const dialWidth = width(dial);
+        if (dialWidth > room) break;
+        room -= dialWidth;
+        showWeekly += 1;
+      }
+      const showFiveHour = hasFiveHour && width(fiveHour) <= room;
       setVisibility((previous) =>
         previous.weekly === showWeekly && previous.fiveHour === showFiveHour
           ? previous
@@ -229,11 +237,9 @@ function useStatusDialVisibility(hasContext: boolean, hasWeekly: boolean, hasFiv
       );
     };
     measure();
-    const stop = [row, context, weekly, fiveHour]
-      .filter((element) => element !== null)
-      .map((element) => observeResize(element, measure));
-    return () => stop.forEach((unobserve) => unobserve());
-  }, [hasContext, hasWeekly, hasFiveHour]);
+    const elements = [row, context, ...weekly, fiveHour].filter((element) => element !== null);
+    return observeResize(elements, measure);
+  }, [hasContext, weeklyKey, hasFiveHour]);
   return { rowRef, contextRef, weeklyRef, fiveHourRef, visibility };
 }
 
@@ -248,9 +254,12 @@ export function StatusDialStrip(props: {
   const { stats, nowMs } = props;
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const context = stats.contextTokens === null ? null : formatStatusLineTokens(stats.contextTokens);
+  const weeklyLimits =
+    stats.weekly === null ? stats.weeklyAccounts : [{ ...stats.weekly, id: "weekly", label: null }];
+  const weeklyKey = weeklyLimits.map((limit) => limit.id).join("\n");
   const { rowRef, contextRef, weeklyRef, fiveHourRef, visibility } = useStatusDialVisibility(
     context !== null,
-    stats.weekly !== null,
+    weeklyKey,
     stats.fiveHour !== null,
   );
   const contextName = (
@@ -294,21 +303,26 @@ export function StatusDialStrip(props: {
             <LimitDial limit={stats.fiveHour} nowMs={nowMs} name="5h" title={gt("5-hour limit")} />
           </span>
         )}
-        {stats.weekly === null ? null : (
-          <span ref={weeklyRef} className={visibility.weekly ? "shrink-0" : HIDDEN_DIAL}>
-            <LimitDial
-              limit={stats.weekly}
-              nowMs={nowMs}
-              name={
-                <CompactLabel
-                  label={gt("week", { $context: "weekly usage limit" })}
-                  short={gt("wk", { $context: "short label for weekly usage" })}
+        <span ref={weeklyRef} className="contents">
+          {weeklyLimits.map((limit, index) => {
+            const account = limit.label === null ? "" : ` · ${limit.label}`;
+            return (
+              <span key={limit.id} className={index < visibility.weekly ? "shrink-0" : HIDDEN_DIAL}>
+                <LimitDial
+                  limit={limit}
+                  nowMs={nowMs}
+                  name={
+                    <CompactLabel
+                      label={gt("week", { $context: "weekly usage limit" }) + account}
+                      short={gt("wk", { $context: "short label for weekly usage" }) + account}
+                    />
+                  }
+                  title={gt("Weekly limit") + account}
                 />
-              }
-              title={gt("Weekly limit")}
-            />
-          </span>
-        )}
+              </span>
+            );
+          })}
+        </span>
         {cost === null ? null : (
           <Stat
             label={cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
@@ -492,6 +506,14 @@ export function StatusDialCard(props: {
         {stats.weekly === null ? null : (
           <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
         )}
+        {stats.weeklyAccounts.map((limit) => (
+          <LimitFact
+            key={limit.id}
+            name={`${gt("Weekly limit")} · ${limit.label}`}
+            limit={limit}
+            nowMs={nowMs}
+          />
+        ))}
         {stats.cost === null ? null : (
           <Fact
             name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
