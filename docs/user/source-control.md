@@ -406,7 +406,7 @@ even when its changes look independent. Stack actions require an environment tha
 
 ## Disable background Git
 
-Turn off **Background Git** in **Settings → HomuCode → Agent behavior → Extra features** to stop automatic Git status and branch
+Turn off **Background Git** in **Settings → HomuCode → Misc.+Agent behavior → Extra features** to stop automatic Git status and branch
 subscriptions, fetch and auto-pull, PR discovery/sync/watches and auto-settlement,
 new turn checkpoints, and automatic worktree cleanup. It is on by default. Restart the host
 to apply; Settings shows its running value and any pending change. `T3CODE_BACKGROUND_GIT`

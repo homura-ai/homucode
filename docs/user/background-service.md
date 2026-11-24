@@ -124,7 +124,7 @@ the protection is in place, and `t3 service protect --undo` removes it.
 
 Memory controls are off by default: agents have no memory cap, and the agents'
 slice is left unlimited. Agents still run with lower CPU and disk priority than
-the server. Turn on **Enable memory controls** under **Settings → HomuCode → Agent behavior → Agent memory controls**.
+the server. Turn on **Enable memory controls** under **Settings → HomuCode → Misc.+Agent behavior → Agent memory controls**.
 
 With them on, on Linux with a systemd user manager and cgroups v2, each agent
 process is limited to 6 GiB before throttling and 8 GiB before a possible

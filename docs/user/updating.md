@@ -58,7 +58,7 @@ provider updates once none of that provider's threads on that machine have run
 for five minutes, so a busy Codex thread does not hold back a Claude update.
 Each version is tried once per start, so a failed update waits for you.
 
-It is on by default. Turn it off for a machine under **Settings → HomuCode → Agent behavior →
+It is on by default. Turn it off for a machine under **Settings → HomuCode → Misc.+Agent behavior →
 Extra features → Update when agents are idle**.
 
 ## Switch between Stable and Nightly

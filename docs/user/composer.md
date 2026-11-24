@@ -92,7 +92,7 @@ other action for a single message. From a hardware keyboard, `Cmd+Return`
 (`Ctrl+Shift+Return`) when Return inserts a new line. The button only offers
 Steer when the running agent supports it.
 
-**Settings → HomuCode → Agent behavior → Extra features** has three related options. With **Stop or wait jumps
+**Settings → HomuCode → Misc.+Agent behavior → Extra features** has three related options. With **Stop or wait jumps
 the queue**, a message containing only “stop” or “wait” interrupts the current
 turn and goes ahead of queued messages. **Resend unread steers after Stop** covers a
 message you steer to Claude while it runs a tool: Claude reads it only after the tool
@@ -105,7 +105,7 @@ options start off.
 On web and desktop, check **Apply instantly** in the model picker to apply each change to the
 running turn regardless of the environment's setting. To apply only the final selection, leave
 that checkbox off and enable **Apply model and effort when closing the picker** under
-**Settings → HomuCode → Agent behavior → Extra features**. With both picker options off, the environment setting
+**Settings → HomuCode → Misc.+Agent behavior → Extra features**. With both picker options off, the environment setting
 continues to apply. On an idle thread, saved model changes appear in the chat right away. The next
 message uses the saved choice, including messages from another thread. Switching provider instances
 during a running turn still waits until you send a message.
@@ -148,7 +148,7 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Status line
 
-Enable **Status line** under **Settings → Agent behavior** on desktop and web, or
+Enable **Status line** under **Settings → HomuCode → Misc.+Agent behavior** on desktop and web, or
 **Settings → HomuCode** on mobile. The context dial shows the percentage used and the
 token count. The 5-hour and weekly dials show the percentage remaining. A tick marks
 the projected remainder at reset. In a narrow bar, labels shorten and the weekly limit
@@ -188,7 +188,7 @@ you. Projections and ratios appear once a recent burn-rate estimate is available
 
 On desktop and web, **All models** shows the environment's provider quotas. Turn on
 **Show model names** in the section to see each provider's model list. Both preferences
-are available under **Settings → HomuCode → Agent behavior → Extra features**.
+are available under **Settings → HomuCode → Misc.+Agent behavior → Extra features**.
 
 To draw your own, set **Status line command** to any shell command: it receives Claude
 Code's status line JSON on stdin and runs in the thread's folder, so a script written for
@@ -380,7 +380,7 @@ Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it.
 
 On web and desktop, `/q <question>` asks one question on the **Quick model** selected in
-**Settings → HomuCode → Agent behavior**, then returns to the thread's model for the next message. Choose a
+**Settings → HomuCode → Misc.+Agent behavior**, then returns to the thread's model for the next message. Choose a
 quick model first; it is off until you do.
 
 To change the folder a thread works in, send `/cd <folder>` on web or desktop. Relative paths
