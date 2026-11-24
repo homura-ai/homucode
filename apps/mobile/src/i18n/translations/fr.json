@@ -4901,6 +4901,7 @@
   "339ac9045f4aac8e": "{term, select, mr {Aucune merge request associée.} cr {Aucune demande de modification associée.} other {Aucune pull request associée.}}",
   "09e9a9f79f92f284": "{term, select, mr {Associer une merge request} cr {Associer une demande de modification} other {Associer une pull request}}",
   "b83b455bf8a8194e": "Impossible d’envoyer le message en file d’attente",
+  "7e719c3c1c8e7d4b": "Impossible d’envoyer le message de réorientation",
   "837e0aadf62349a2": "Automatic · {task}",
   "0489fbf8de4721d1": "Reprendre la file d’attente",
   "94fa3b3639861206": "Impossible de reprendre la file d’attente",

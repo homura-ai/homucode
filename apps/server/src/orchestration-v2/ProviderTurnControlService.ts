@@ -303,6 +303,17 @@ export const layer: Layer.Layer<
                 cause: "No live provider session can confirm this subagent's outcome.",
               });
             }
+            if (
+              input.sendSteerMessageId !== undefined &&
+              loaded.providerTurn.status === "running"
+            ) {
+              return yield* new ProviderTurnControlError({
+                threadId: input.threadId,
+                operation: "interrupt",
+                providerTurnId: input.providerTurnId,
+                cause: "No live provider session can confirm the turn stopped.",
+              });
+            }
             return;
           }
           if (input.subagent !== undefined) {
@@ -357,11 +368,20 @@ export const layer: Layer.Layer<
           if (!skipped && loaded.providerTurn.status === "running") {
             // Let native terminal ingestion finalize the attempt before the Stop follow-up repairs it.
             const { runAttemptId } = loaded.providerTurn;
-            yield* awaitSettled(input.threadId, {
+            const settled = yield* awaitSettled(input.threadId, {
               providerThreadId: input.providerThreadId,
               providerTurnId: input.providerTurnId,
               ...(runAttemptId === null ? {} : { attemptId: runAttemptId }),
             }).pipe(Effect.timeoutOption("2 seconds"));
+            if (input.sendSteerMessageId !== undefined && Option.isNone(settled)) {
+              return yield* new ProviderTurnControlError({
+                threadId: input.threadId,
+                operation: "interrupt",
+                providerTurnId: input.providerTurnId,
+                unresponsive: true,
+                cause: "Timed out waiting for the turn to stop.",
+              });
+            }
           }
         },
         (effect, input) =>

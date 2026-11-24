@@ -5940,6 +5940,20 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }
       assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "interrupted");
 
+      if (force) {
+        yield* harness.runtime.interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId,
+          sendSteer: {
+            messageId: MessageId.make("unread-steer"),
+            onSkipped: () => {
+              skipped = true;
+            },
+          },
+        });
+        assert.isFalse(skipped, "The server must still confirm terminal state for this turn.");
+      }
+
       const redelivered = harness.events
         .slice(eventsBefore)
         .filter((event) => event.type === "steer.updated" && event.redeliver === true)

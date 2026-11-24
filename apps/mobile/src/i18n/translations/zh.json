@@ -4890,6 +4890,7 @@
   "339ac9045f4aac8e": "{term, select, mr {没有已关联的 merge request。} cr {没有已关联的 change request。} other {没有已关联的 pull request。}}",
   "09e9a9f79f92f284": "{term, select, mr {关联 MR} cr {关联 change request} other {关联 PR}}",
   "b83b455bf8a8194e": "无法发送排队消息",
+  "7e719c3c1c8e7d4b": "无法发送引导消息",
   "837e0aadf62349a2": "Automatic · {task}",
   "0489fbf8de4721d1": "恢复队列",
   "94fa3b3639861206": "无法恢复队列",

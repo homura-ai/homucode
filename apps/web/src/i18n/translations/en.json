@@ -4070,6 +4070,7 @@
   "6e213186f9f6f071": "Open parent",
   "f1c052beef9c4491": "Chosen",
   "b83b455bf8a8194e": "Could not send queued message",
+  "7e719c3c1c8e7d4b": "Could not send steer",
   "a0b523c9c5f35982": "{count, plural, one {{count} queued message} other {{count} queued messages}}",
   "973e99fa86d7f531": "Queued message {position} of {total}, not sent",
   "0f6087c4f53c7f17": "Start a turn with this message ({shortcut})",

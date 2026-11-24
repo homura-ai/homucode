@@ -467,7 +467,11 @@ export function createThreadEnvironmentAtoms<R, E, IdentityError = never>(
       label: "environment-data:commands:thread:send-steer-now",
       execute: sendSteerNow,
       scheduler,
-      concurrency,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.threadId, input.messageId]),
+      },
     }),
     promoteQueuedRun: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:promote-queued-run",

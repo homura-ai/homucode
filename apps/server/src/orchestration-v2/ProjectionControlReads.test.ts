@@ -316,12 +316,14 @@ it.effect.each(storageCases)(
       yield* Effect.gen(function* () {
         const control = yield* ProviderTurnControlService.ProviderTurnControlServiceV2;
         const reply = yield* RuntimeRequestService.RuntimeRequestServiceV2;
-        const interrupt = control.interrupt({
+        const target = {
           threadId,
           providerThreadId,
           providerTurnId,
           providerSessionId,
-        });
+        };
+        const interrupt = control.interrupt(target);
+        const sendSteerNow = control.interrupt({ ...target, sendSteerMessageId: messageId });
         // The provider never reports the turn settled, so Stop returns at the bound.
         const unconfirmed = yield* Effect.forkChild(interrupt);
         yield* Queue.take(pulls);
@@ -364,7 +366,12 @@ it.effect.each(storageCases)(
           "Failure",
         );
         assert.lengthOf(calls, 3);
-        const confirmed = yield* Effect.forkChild(interrupt);
+        const unconfirmedSend = yield* Effect.forkChild(Effect.flip(sendSteerNow));
+        yield* Queue.take(pulls);
+        yield* TestClock.adjust("2 seconds");
+        assert.isTrue((yield* Fiber.join(unconfirmedSend)).unresponsive);
+
+        const confirmed = yield* Effect.forkChild(sendSteerNow);
         yield* Queue.take(pulls);
         const ingest = (sequence: number, event: OrchestrationV2DomainEvent) =>
           store
@@ -377,7 +384,7 @@ it.effect.each(storageCases)(
           occurredAt: now,
           payload: { ...context.providerTurn!, status: "completed", completedAt: now },
         });
-        // A settled provider turn is not enough; Stop waits for its attempt to finalize.
+        // Send now waits for the attempt after the provider turn settles.
         yield* Queue.take(pulls);
         assert.isUndefined(confirmed.pollUnsafe());
         yield* ingest(2, {
@@ -393,6 +400,7 @@ it.effect.each(storageCases)(
           "interrupt",
           `${timestampedPrompt("Use the smaller fix.", now)}\n\n[T3] Sent from: unknown device. A human sent this message.`,
           "reply",
+          "interrupt",
           "interrupt",
           "interrupt",
         ]);

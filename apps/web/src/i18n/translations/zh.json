@@ -4072,6 +4072,7 @@
   "6e213186f9f6f071": "打开父会话",
   "f1c052beef9c4491": "Chosen",
   "b83b455bf8a8194e": "无法发送排队消息",
+  "7e719c3c1c8e7d4b": "无法发送引导消息",
   "a0b523c9c5f35982": "{count, plural, other {{count} 条已排队的消息}}",
   "973e99fa86d7f531": "排队消息 {position}/{total}，尚未发送",
   "0f6087c4f53c7f17": "用此消息开始一个轮次 ({shortcut})",

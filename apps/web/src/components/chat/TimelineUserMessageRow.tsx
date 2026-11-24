@@ -16,6 +16,11 @@ import {
   type ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
@@ -54,6 +59,7 @@ import {
   LinkIcon,
 } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
@@ -1176,25 +1182,34 @@ function SendSteerNowButton({
   readonly messageId: MessageId;
 }) {
   const gt = useGT();
-  const send = useAtomCommand(threadEnvironment.sendSteerNow);
+  const m = useMessages();
+  const send = useAtomCommand(threadEnvironment.sendSteerNow, { reportFailure: false });
   const [sending, setSending] = useState(false);
   return (
     <Button
       size="xs"
       variant="ghost-muted"
       disabled={sending}
+      aria-busy={sending}
       title={gt("Interrupt the current work to deliver this steer")}
       onClick={async () => {
         setSending(true);
-        await send({
+        const result = await send({
           environmentId: threadRef.environmentId,
           input: { threadId: threadRef.threadId, messageId },
-        });
-        setSending(false);
+        }).finally(() => setSending(false));
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          toastManager.add({
+            type: "error",
+            title: gt("Could not send steer"),
+            description:
+              errorDisplayMessage(squashAtomCommandFailure(result), m) ?? gt("Try again."),
+          });
+        }
       }}
     >
       <ArrowUpIcon />
-      <T>Send now</T>
+      {sending ? gt("Stopping…") : <T>Send now</T>}
     </Button>
   );
 }
