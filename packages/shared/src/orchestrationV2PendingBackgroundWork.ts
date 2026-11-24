@@ -298,7 +298,7 @@ export function derivePendingBackgroundWork(input: {
     return [...externalTasks, ...pullRequestWatchTasks(input.pullRequests)];
   }
   if (!isLatestRunSettledForBackgroundWait(input.latestRun)) {
-    return externalTasks;
+    return input.latestRun.status === "rolled_back" ? externalTasks : [];
   }
 
   const byTaskId = new Map<string, PendingBackgroundWorkTask>(

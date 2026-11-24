@@ -1,5 +1,6 @@
 // @effect-diagnostics globalTimers:off - Shelf placement timers run in web and native clients, outside an Effect runtime.
 import {
+  backgroundWorkHoldsCompletion,
   isExternalJobWaitTask,
   isPullRequestWatchTask,
 } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
@@ -24,8 +25,10 @@ type WorkingThreadInput = Pick<
 function onlyWaitingOnExternalJobs(thread: WorkingThreadInput): boolean {
   return (
     thread.runtime?.status === "idle" &&
-    thread.pendingBackgroundTasks.length > 0 &&
-    thread.pendingBackgroundTasks.every(isExternalJobWaitTask)
+    thread.pendingBackgroundTasks.some(isExternalJobWaitTask) &&
+    !thread.pendingBackgroundTasks.some(
+      (task) => !isExternalJobWaitTask(task) && backgroundWorkHoldsCompletion([task]),
+    )
   );
 }
 
@@ -35,13 +38,13 @@ export function isThreadWorking(
 ): boolean {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
   if (thread.pendingSubagentRequest != null) return false;
-  if (onlyWaitingOnExternalJobs(thread)) return false;
   const watchingPullRequest =
     keepWatchingPullRequests &&
     (thread.pendingGuestMessageCount ?? 0) === 0 &&
     thread.runtime?.status !== "failed" &&
     thread.runtime?.lastError == null &&
     thread.pendingBackgroundTasks.some(isPullRequestWatchTask);
+  if (!watchingPullRequest && onlyWaitingOnExternalJobs(thread)) return false;
   if (
     !threadRuntimeIsActive(thread.runtime) &&
     thread.runtime?.status !== "idle" &&
