@@ -25,7 +25,7 @@ does the same. Change these shortcuts in **Settings → Keybindings** under
 **Composer: Opposite Queue or Steer Action**, **Composer: Start in Background**,
 or **Composer: Send and Start New Thread**. These bindings take priority over the
 send shortcut. Click the send button to use the configured follow-up behavior.
-With **Stop or wait jumps the queue** on in **Settings → HomuCode → Agent behavior → Extra features**,
+With **Stop or wait jumps the queue** on in **Settings → HomuCode → Misc.+Agent behavior → Extra features**,
 a message that is only "stop" or "wait" stops the running turn either way and goes to
 the agent before anything else in the queue.
 

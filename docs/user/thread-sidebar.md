@@ -81,7 +81,7 @@ Pin a thread from its menu to keep it above your active work. Thread and project
 pins belong to the device you are using, including their pinned order. Pinning or
 unpinning on your phone does not change your desktop pins.
 
-New subagents start unpinned. Turn on **Settings → HomuCode → Agent behavior → Subagents →
+New subagents start unpinned. Turn on **Settings → HomuCode → Misc.+Agent behavior → Subagents →
 Subagents inherit parent pin** to pin new subagents on the same server on each
 device where their parent is pinned.
 
@@ -358,7 +358,7 @@ layouts with an inspector, its thread opens beside the parent. Maximize it to
 fill the screen; close the full-screen view to return to the parent and inspector.
 Stop ends only the current thread by default. Shift-click Stop, use background Stop,
 or send `/stopall` to stop its subagents too. To make ordinary Stop include subagents,
-change **Stop behavior** in **Settings → HomuCode → Agent behavior → Extra features**.
+change **Stop behavior** in **Settings → HomuCode → Misc.+Agent behavior → Extra features**.
 Before archiving the parent, wait for its delegated tasks to finish or cancel them.
 
 Provider-native subagents can't take messages; message the parent thread instead.

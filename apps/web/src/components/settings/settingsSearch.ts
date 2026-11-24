@@ -105,7 +105,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": msg("Projects"),
   "/settings/homucode": msg("Interface"),
   "/settings/madohomu": "MadoHomu",
-  "/settings/agent-behavior": msg("Agent behavior"),
+  "/settings/agent-behavior": msg("Misc.+Agent behavior"),
   "/settings/building-homu": msg("Building Homu"),
   "/settings/general": msg("General"),
   "/settings/appearance": msg("Appearance"),
