@@ -245,14 +245,16 @@ function addSnoozeDays(base: Date, days: number): Date {
   return next;
 }
 
+function snoozeDaysLabel(days: number, resolve: MFunctionType): string {
+  return resolve(
+    msg("{count, plural, one {In {count} day} other {In {count} days}}", { count: days }),
+  );
+}
+
 /** "In 3 hours", "In 90 minutes", "In 2 days": the largest unit that divides evenly. */
 function snoozeDurationLabel(minutes: number, resolve: MFunctionType): string {
   if (minutes % (24 * 60) === 0) {
-    return resolve(
-      msg("{count, plural, one {In {count} day} other {In {count} days}}", {
-        count: minutes / (24 * 60),
-      }),
-    );
+    return snoozeDaysLabel(minutes / (24 * 60), resolve);
   }
   if (minutes % 60 === 0) {
     return resolve(
@@ -312,7 +314,7 @@ function snoozePresetLabel(
         : resolve(msg("This evening"));
   }
   if (daysAhead === 1) return resolve(msg("Tomorrow"));
-  if ("days" in setting) return snoozeDurationLabel(daysAhead * 24 * 60, resolve);
+  if ("days" in setting) return snoozeDaysLabel(daysAhead, resolve);
   if (setting.day === "monday") return resolve(msg("Next week"));
   if (setting.day === "today" || setting.day === "tomorrow") return "";
   return resolve(daysAhead === 7 ? NEXT_WEEKDAY_LABELS[setting.day] : WEEKDAY_LABELS[setting.day]);
@@ -335,18 +337,22 @@ export function resolveSnoozePreset(
   let wake: Date;
   let daysAhead = 0;
   if (setting.kind === "after") {
-    wake = DateTime.toDate(DateTime.makeUnsafe(now.getTime() + setting.minutes * 60_000));
+    wake = new Date(now.getTime() + setting.minutes * 60_000);
   } else {
     daysAhead = snoozePresetDaysAhead(setting, now);
-    wake = addSnoozeDays(now, daysAhead);
+    const wholeDays = Math.trunc(daysAhead);
+    wake = addSnoozeDays(now, wholeDays);
     wake.setHours(Number(setting.time.slice(0, 2)), Number(setting.time.slice(3)), 0, 0);
-    // A today option whose time has passed is left out until tomorrow.
-    if (wake.getTime() <= now.getTime()) return null;
+    if (wholeDays !== daysAhead) {
+      wake.setTime(wake.getTime() + (daysAhead - wholeDays) * 24 * 60 * 60_000);
+    }
   }
+  if (!(wake.getTime() > now.getTime())) return null;
   const label = snoozePresetLabel(setting, daysAhead, resolve);
   // Show the weekday when the label only gives a duration or says "Next week".
   const labelNamesDay =
-    setting.kind === "at" && (daysAhead <= 1 || (!("days" in setting) && setting.day !== "monday"));
+    setting.kind === "at" &&
+    (daysAhead === 1 || (!("days" in setting) && setting.day !== "monday"));
   const time = formatTime(wake);
   const weekOrMoreAhead = wake.getTime() >= addSnoozeDays(now, 7).setHours(0, 0, 0, 0);
   return {
@@ -365,26 +371,33 @@ export function resolveSnoozePreset(
   };
 }
 
-/** The snooze menu: soonest first, one row per wake minute. */
+/** The snooze menu, soonest first. Whole-minute options that land in the same minute tie. */
 export function resolveSnoozePresets(
   now: Date,
   options: SnoozePresetOptions = {},
   resolve: MFunctionType = mFallback,
 ): ReadonlyArray<SnoozePreset> {
-  // By minute, so a duration (which keeps the clock's seconds) and a set time in the same
-  // minute tie, and the stable sort keeps whichever comes first in settings.
-  const wakeMinute = (preset: SnoozePreset) => Math.floor(Date.parse(preset.snoozedUntil) / 60_000);
-  const seen = new Set<number>();
+  const seenWakes = new Set<number>();
+  const seenMinutes = new Set<number>();
   return (
     (options.presets ?? DEFAULT_SNOOZE_PRESETS)
-      .flatMap((setting) => resolveSnoozePreset(setting, now, options.formatTime, resolve) ?? [])
-      // flatMap returned a new array; Hermes has no `toSorted`.
-      .sort((a, b) => wakeMinute(a) - wakeMinute(b))
-      .filter((preset) => {
-        if (seen.has(wakeMinute(preset))) return false;
-        seen.add(wakeMinute(preset));
-        return true;
+      .flatMap((setting) => {
+        const preset = resolveSnoozePreset(setting, now, options.formatTime, resolve);
+        if (!preset) return [];
+        const wake = Date.parse(preset.snoozedUntil);
+        const minute = Math.floor(wake / 60_000);
+        const whole =
+          setting.kind === "after"
+            ? Number.isInteger(setting.minutes)
+            : !("days" in setting) || Number.isInteger(setting.days);
+        if (seenWakes.has(wake) || (whole && seenMinutes.has(minute))) return [];
+        seenWakes.add(wake);
+        if (whole) seenMinutes.add(minute);
+        return [{ preset, wake }];
       })
+      // flatMap returned a new array; Hermes has no `toSorted`.
+      .sort((a, b) => a.wake - b.wake)
+      .map(({ preset }) => preset)
   );
 }
 

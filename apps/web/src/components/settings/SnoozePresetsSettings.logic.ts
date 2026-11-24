@@ -26,13 +26,11 @@ export function sortSnoozeRows<K>(
   now: Date,
 ): { readonly presets: ReadonlyArray<SnoozePresetSetting>; readonly keys: ReadonlyArray<K> } {
   const order = presets
-    .map((preset, index) => ({
-      index,
-      wake: resolveSnoozePreset(preset, now)?.snoozedUntil ?? null,
-    }))
-    .toSorted((a, b) =>
-      a.wake === b.wake ? 0 : a.wake === null ? 1 : b.wake === null ? -1 : a.wake < b.wake ? -1 : 1,
-    );
+    .map((preset, index) => {
+      const resolved = resolveSnoozePreset(preset, now);
+      return { index, wake: resolved ? Date.parse(resolved.snoozedUntil) : Infinity };
+    })
+    .toSorted((a, b) => a.wake - b.wake);
   return {
     presets: order.map(({ index }) => presets[index]!),
     keys: order.map(({ index }) => keys[index]!),

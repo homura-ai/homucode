@@ -139,6 +139,50 @@ function strictSecretReferencePaths(
 }
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings", (it) => {
+  it.effect("projects legacy snooze settings and preserves hidden presets on write", () =>
+    Effect.gen(function* () {
+      const legacyPresets = Array.from({ length: 8 }, (_, index) => ({
+        kind: "after" as const,
+        minutes: index + 1,
+      }));
+      const snoozePresets = [
+        { kind: "after" as const, minutes: 0.5 },
+        { kind: "after" as const, minutes: 31 * 24 * 60 },
+        { kind: "at" as const, days: 1.5, time: "09:00" },
+        { kind: "at" as const, days: 2, time: "09:00" },
+        ...legacyPresets,
+        { kind: "at" as const, day: "today" as const, time: "18:00" },
+      ];
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.updateSettings({ snoozePresets });
+      const legacy = ServerSettingsModule.redactServerSettingsForClient(settings, {
+        secretReferences: true,
+      });
+      const current = ServerSettingsModule.redactServerSettingsForClient(settings, {
+        secretReferences: true,
+        unboundedSnoozePresets: true,
+      });
+      assert.deepEqual(legacy.snoozePresets, legacyPresets);
+      assert.deepEqual(current.snoozePresets, snoozePresets);
+
+      const olderClient = { secretReferences: true };
+      for (const count of [1, 2]) {
+        const error = yield* service
+          .updateSettings({ snoozePresets: legacyPresets.slice(count) }, olderClient)
+          .pipe(Effect.flip);
+        assert.equal(error.operation, "write-file");
+      }
+      assert.deepEqual((yield* service.getSettings).snoozePresets, snoozePresets);
+      const currentPresets = snoozePresets.slice(-8);
+      yield* service.updateSettings({ snoozePresets: currentPresets });
+      const stale = yield* service
+        .updateSettings({ snoozePresets: legacyPresets.slice(1) }, olderClient)
+        .pipe(Effect.flip);
+      assert.equal(stale.operation, "write-file");
+      assert.deepEqual((yield* service.getSettings).snoozePresets, currentPresets);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

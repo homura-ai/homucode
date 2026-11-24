@@ -471,6 +471,34 @@ describe("resolveSnoozePresets", () => {
     ]);
   });
 
+  it("keeps distinct fractional durations within the same wake minute, soonest first", () => {
+    const now = localDate(2026, 4, 8, 10);
+    const presets = resolveSnoozePresets(now, {
+      presets: [
+        { kind: "after", minutes: 0.75 },
+        { kind: "after", minutes: 0.25 },
+        { kind: "after", minutes: 0.75 },
+      ],
+    });
+    expect(presets.map((preset) => Date.parse(preset.snoozedUntil) - now.getTime())).toEqual([
+      15_000, 45_000,
+    ]);
+  });
+
+  it("adds fractional days to the selected local time and skips unrepresentable dates", () => {
+    const now = localDate(2026, 4, 8, 10);
+    const presets = resolveSnoozePresets(now, {
+      presets: [
+        { kind: "at", days: 40.5, time: "09:00" },
+        { kind: "at", days: Number.MAX_VALUE, time: "09:00" },
+        { kind: "after", minutes: Number.MAX_VALUE },
+      ],
+    });
+    expect(presets.map((preset) => preset.snoozedUntil)).toEqual([
+      localDate(2026, 5, 18, 21).toISOString(),
+    ]);
+  });
+
   it("shows one row when two presets wake at the same time", () => {
     // Sunday, so Tomorrow 9:00 and Next week 9:00 are the same Monday.
     expect(menu(localDate(2026, 8, 30, 7, 1))).toEqual([

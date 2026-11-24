@@ -16,6 +16,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  type SnoozePresetSetting,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -140,9 +141,42 @@ const normalizeServerSettings = (
     ),
   );
 
+export interface SettingsClient {
+  readonly secretReferences: boolean;
+  readonly unboundedSnoozePresets?: boolean;
+}
+
+function legacySnoozePresets(presets: ReadonlyArray<SnoozePresetSetting>) {
+  return presets
+    .filter((preset) =>
+      preset.kind === "at"
+        ? "day" in preset
+        : Number.isInteger(preset.minutes) && preset.minutes >= 1 && preset.minutes <= 30 * 24 * 60,
+    )
+    .slice(0, 8);
+}
+
+function ensureSnoozePresetWriteAllowed(
+  patch: ServerSettingsPatch,
+  settingsPath: string,
+  client?: SettingsClient,
+): Effect.Effect<void, ServerSettingsError> {
+  // Legacy writes replace the list and can come from a stale, filtered snapshot.
+  if (client !== undefined && !client.unboundedSnoozePresets && patch.snoozePresets !== undefined) {
+    return Effect.fail(
+      new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        cause: new Error("Update HomuCode to edit the full snooze preset list."),
+      }),
+    );
+  }
+  return Effect.void;
+}
+
 export function redactServerSettingsForClient(
   settings: ServerSettings,
-  client: { readonly secretReferences: boolean },
+  client: SettingsClient,
 ): ServerSettings {
   const redacted = mapSettingsSecrets(settings, (secret) =>
     secret.sensitive
@@ -155,7 +189,11 @@ export function redactServerSettingsForClient(
     : mapSettingsSecretValues(redacted, (value) =>
         isSecretReference(value) ? SECRET_REDACTED : value,
       );
-  return { ...shaped, secretProviders: withoutUnknownSecretProviderConfigs(shaped) };
+  // Legacy clients validate the whole snapshot against their old preset limits.
+  const snoozePresets = client.unboundedSnoozePresets
+    ? shaped.snoozePresets
+    : legacySnoozePresets(shaped.snoozePresets);
+  return { ...shaped, snoozePresets, secretProviders: withoutUnknownSecretProviderConfigs(shaped) };
 }
 
 /** A client shown a reference as a saved secret sends that marker back; it keeps the reference. */
@@ -267,11 +305,13 @@ export class ServerSettingsService extends Context.Service<
 
     readonly updateSettings: (
       patch: ServerSettingsPatch,
+      client?: SettingsClient,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly updateProviderInstance: (
       mutation: ProviderInstanceMutation,
       patch?: ServerSettingsPatch,
+      client?: SettingsClient,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly withSettingsSnapshot: <A, E, R>(
@@ -330,13 +370,16 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     subagentsInheritParentPin: Ref.get(currentSettingsRef).pipe(
       Effect.map((settings) => settings.subagentsInheritParentPin),
     ),
-    updateSettings: (patch) =>
+    updateSettings: (patch, client) =>
       updateTestSettings((currentSettings) =>
-        Effect.succeed(applyServerSettingsPatch(currentSettings, patch)),
+        ensureSnoozePresetWriteAllowed(patch, "test settings", client).pipe(
+          Effect.as(applyServerSettingsPatch(currentSettings, patch)),
+        ),
       ),
-    updateProviderInstance: (mutation, patch = {}) =>
+    updateProviderInstance: (mutation, patch = {}, client) =>
       updateTestSettings((currentSettings) =>
         Effect.gen(function* () {
+          yield* ensureSnoozePresetWriteAllowed(patch, "test settings", client);
           yield* ensureProviderInstanceMutationAllowed(currentSettings, mutation, "test settings");
           const patched = applyServerSettingsPatch(currentSettings, patch);
           return applyProviderInstanceMutation(patched, mutation);
@@ -1470,15 +1513,17 @@ const make = Effect.gen(function* () {
         }).pipe(Effect.as(false)),
       ),
     ),
-    updateSettings: (patch) =>
+    updateSettings: (patch, client) =>
       updateAndPersistSettings(patch, (current) =>
-        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
+        ensureSnoozePresetWriteAllowed(patch, settingsPath, client).pipe(
+          Effect.andThen(ensureSecretProviderWritesAllowed(patch, settingsPath)),
           Effect.as(applyServerSettingsPatch(current, patch)),
         ),
       ),
-    updateProviderInstance: (mutation, patch = {}) =>
+    updateProviderInstance: (mutation, patch = {}, client) =>
       updateAndPersistSettings(patch, (current) =>
         Effect.gen(function* () {
+          yield* ensureSnoozePresetWriteAllowed(patch, settingsPath, client);
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
           const patched = applyServerSettingsPatch(current, patch);
