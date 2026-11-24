@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - FileSystem has no reflink copy, and cp clones a folder in one call.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
 import * as NodeUtil from "node:util";
 
@@ -41,36 +40,6 @@ const requireForFfi = NodeModule.createRequire(import.meta.url);
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
-/**
- * Whether this server can clone checkouts: always on macOS, and on Linux when the T3 home's cache
- * folder takes reflinks (Btrfs, XFS, bcachefs). Linux probes once with a one-byte file.
- */
-export const supported = Effect.fn("CheckoutCloner.supported")(function* () {
-  const platform = yield* HostProcess.Platform;
-  if (platform === "darwin") return true;
-  if (platform !== "linux") return false;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const directory = path.dirname((yield* ServerConfig.ServerConfig).worktreeCheckoutCacheDir);
-  return yield* Effect.scoped(
-    Effect.gen(function* () {
-      yield* fileSystem.makeDirectory(directory, { recursive: true });
-      const probe = yield* fileSystem.makeTempDirectoryScoped({
-        directory,
-        prefix: ".reflink-probe-",
-      });
-      const source = path.join(probe, "source");
-      yield* fileSystem.writeFileString(source, "t");
-      const clone = path.join(probe, "clone");
-      yield* Effect.tryPromise({
-        try: () => NodeFSP.copyFile(source, clone, NodeFSP.constants.COPYFILE_FICLONE_FORCE),
-        catch: (cause) => new CheckoutCloneError({ source, destination: clone, cause }),
-      });
-      return true;
-    }),
-  ).pipe(Effect.orElseSucceed(() => false));
-});
-
 /** Linux `cp --reflink=always`, which fails rather than copy data when a clone is impossible. */
 const reflinkCopy = Effect.fn("CheckoutCloner.reflink")(function* (
   source: string,
@@ -91,6 +60,33 @@ const reflinkCopy = Effect.fn("CheckoutCloner.reflink")(function* (
       catch: (cause) => new CheckoutCloneError({ source, destination, cause }),
     }),
   );
+});
+
+/**
+ * Whether this server can clone checkouts: always on macOS, and on Linux when the T3 home's cache
+ * folder takes reflinks (Btrfs, XFS, bcachefs). Linux probes once by cloning a one-byte file the way checkouts are cloned.
+ */
+export const supported = Effect.fn("CheckoutCloner.supported")(function* () {
+  const platform = yield* HostProcess.Platform;
+  if (platform === "darwin") return true;
+  if (platform !== "linux") return false;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const directory = path.dirname((yield* ServerConfig.ServerConfig).worktreeCheckoutCacheDir);
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      const probe = yield* fileSystem.makeTempDirectoryScoped({
+        directory,
+        prefix: ".reflink-probe-",
+      });
+      const source = path.join(probe, "source");
+      yield* fileSystem.makeDirectory(source);
+      yield* fileSystem.writeFileString(path.join(source, "file"), "t");
+      yield* reflinkCopy(source, path.join(probe, "clone"));
+      return true;
+    }),
+  ).pipe(Effect.orElseSucceed(() => false));
 });
 
 /** macOS `clonefile(2)` or Linux reflinks, which clone a folder hierarchy; elsewhere nothing. */
