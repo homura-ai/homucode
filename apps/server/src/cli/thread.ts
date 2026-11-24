@@ -4,6 +4,7 @@ import {
   OrchestratorMcpCapabilitiesResult,
   OrchestratorMcpClientRequestId,
   ProviderOptionSelections,
+  OrchestratorMcpThreadInterruptResult,
   OrchestratorMcpThreadListResult,
   OrchestratorMcpThreadReadResult,
   OrchestratorMcpThreadSendResult,
@@ -1059,6 +1060,38 @@ const threadSendCommand = Command.make("send", {
   ),
 );
 
+const threadStopCommand = Command.make("stop", {
+  ...projectLocationFlags,
+  thread: threadArgument,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "Stop a thread's active turn and delegated tasks, hold its queue, and end its pull request watches.",
+  ),
+  Command.withHandler((flags) =>
+    Effect.gen(function* () {
+      const threadId = yield* decodeThreadId(flags.thread);
+      yield* withThreadTools(
+        flags,
+        Effect.fn("cli.thread.stop")(function* (tools) {
+          const result = yield* tools.call(
+            "t3_thread_interrupt",
+            { threadId, stop: true },
+            OrchestratorMcpThreadInterruptResult,
+          );
+          yield* flags.json
+            ? printJson(result)
+            : Console.log(
+                result.status === "no_active_run"
+                  ? "Stop requested. No active run."
+                  : "Stop requested.",
+              );
+        }),
+      );
+    }).pipe(reportThreadErrors),
+  ),
+);
+
 const threadJobWaitCommand = Command.make("job-wait", {
   ...projectLocationFlags,
   thread: threadArgument,
@@ -1475,7 +1508,7 @@ const threadAssistCommand = Command.make("assist", {
 );
 
 export const threadCommand = Command.make("thread").pipe(
-  Command.withDescription("Start, message, and read threads on the running server."),
+  Command.withDescription("Start, stop, message, and read threads on the running server."),
   Command.withSubcommands([
     threadIdCommand,
     threadListCommand,
@@ -1484,6 +1517,7 @@ export const threadCommand = Command.make("thread").pipe(
     threadStartCommand,
     threadCapabilitiesCommand,
     threadSendCommand,
+    threadStopCommand,
     threadJobWaitCommand,
     threadShowCommand,
     threadConfigureCommand,
