@@ -4018,7 +4018,7 @@
   "f0e853acd2006d53": "Entornos vinculados",
   "0b83813eb16a9bc0": "Permite que los agentes de una máquina trabajen en tus otras máquinas, y los de ellas en esta. Actívalo en cada máquina. Mientras esté desactivado, no se inicia nada nuevo a través de un vínculo; las tareas en curso terminan.",
   "f9904f78d3003f58": "Checkout rápido de worktrees",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "d6ada5ec242e37ff": "Límites de uso",
   "62127e7b5c0f57a3": "Reanudar tras los límites de uso",
   "4df30d44eb0b0728": "Reanuda automáticamente los hilos cuando se restablecen sus límites de uso. Puedes cancelar la reanudación automática en cada hilo.",

@@ -9070,7 +9070,7 @@
   "13e86eb5d8287a71": "Nach einer Claude- oder Codex-Runde eine vorhergesagte nächste Nachricht im leeren Eingabefeld anzeigen. Tab übernimmt sie. Jede ist eine zusätzliche gecachte Anfrage in deinem Tarif. Erfordert Codex 0.165+. Claude-Threads werden nach einem Neustart aktualisiert.",
   "d4b2a2ec812aafb0": "Nächsten Prompt vorschlagen",
   "298c7150a7621c80": "Simlock-Geräte-Hosts",
-  "ffb411249ff37da7": "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+  "18c98d3ef79d66e2": "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
   "f9904f78d3003f58": "Schneller Worktree-Checkout",
   "ec7623deed751c05": [
     "Teile einen Thread mit einem Gast, der ihn live im Browser verfolgt und Nachrichten sendet, die du genehmigst. Erfordert T3 Connect: Melde dich an und verknüpfe diesen Rechner unter",
@@ -12005,7 +12005,7 @@
   "4a21cf825a2045b0": "beta tab autovervollständigung nächste nachricht vorhersagen claude codex ghost text",
   "fea2dc36585c4a20": "Simlock-Geräte-Hosts (Alpha)",
   "9d834d178130180e": "beta alpha simlock callstack simulator emulator ios android pool lease gateway",
-  "bcb520297a9ae143": "beta schneller worktree checkout klonen apfs copy-on-write cache macos geschwindigkeit",
+  "8701cb8884c0c7d3": "beta schneller worktree checkout klonen apfs copy-on-write cache macos geschwindigkeit btrfs xfs linux speicherplatz",
   "4c83ac419da342bd": "mikrofon audio senden diktat ziel sprache spracheingabe stt transkription umgebung rechner einwilligung datenschutz cloud OpenAI Grok OpenRouter",
   "f9c000e92379d027": "mikrofon eingabe audio gerät reihenfolge priorität bevorzugt",
   "22811f405e0b4b28": "sprache spracheingabe tastatur hotkey halten umschalten auto",
