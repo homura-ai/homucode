@@ -797,6 +797,7 @@ function isTitleIdOnlyUpdate(
   return (
     command.titleId !== undefined &&
     command.title === undefined &&
+    command.externalJobWait === undefined &&
     command.regenerateTitle === undefined &&
     command.branch === undefined &&
     command.worktreePath === undefined &&
@@ -5272,9 +5273,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
                     requestId: command.commandId,
                   };
+          const jobWait = command.externalJobWait;
+          const externalJobWaits = [...(thread.externalJobWaits ?? [])];
+          if (jobWait !== undefined) {
+            const index = externalJobWaits.findIndex((wait) => wait.id === jobWait.id);
+            if (index !== -1) externalJobWaits.splice(index, 1);
+            if (jobWait.label !== null) {
+              externalJobWaits.push({ id: jobWait.id, label: jobWait.label });
+            }
+          }
           return {
             ...thread,
             ...(command.title === undefined ? {} : { title: command.title, titleRenamed: true }),
+            ...(jobWait === undefined ? {} : { externalJobWaits }),
             ...(titleId === undefined ? {} : { titleId }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&

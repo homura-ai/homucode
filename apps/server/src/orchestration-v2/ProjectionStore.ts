@@ -1937,6 +1937,7 @@ export function threadShellFromProjection(
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     runs,
     pullRequests: projection.thread.pullRequests,
+    externalJobWaits: projection.thread.externalJobWaits,
   });
   return {
     automationOrigin: projection.thread.automationOrigin,
@@ -8979,6 +8980,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     activeProviderThreadId: thread.activeProviderThreadId,
                     hasActiveRun: false,
                     pullRequests: thread.pullRequests,
+                    externalJobWaits: thread.externalJobWaits,
                   }),
                 } satisfies ProjectionSettlementCandidate;
               }),
@@ -9191,6 +9193,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             activeProviderThreadId: thread.activeProviderThreadId,
             hasActiveRun: row.active_run_id !== null,
             pullRequests: thread.pullRequests,
+            externalJobWaits: thread.externalJobWaits,
           }),
         ];
         return {

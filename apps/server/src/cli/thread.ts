@@ -8,6 +8,7 @@ import {
   OrchestratorMcpThreadReadResult,
   OrchestratorMcpThreadSendResult,
   OrchestratorMcpThreadWaitResult,
+  ThreadMetadataMcpUpdateResult,
   ProjectId,
   RunId,
   MessageId,
@@ -1003,6 +1004,10 @@ const threadSendCommand = Command.make("send", {
   thread: threadArgument,
   message: messageArgument,
   mode: sendModeFlag,
+  clientRequestId: Flag.String("client-request-id").pipe(
+    Flag.withDescription("Stable retry key to send a message once."),
+    Flag.optional,
+  ),
   wait: waitFlag,
   json: jsonFlag,
 }).pipe(
@@ -1018,9 +1023,15 @@ const threadSendCommand = Command.make("send", {
         Effect.fn("cli.thread.send")(function* (tools) {
           // Work already running when this is sent is not this message's to wait for.
           const followWakes = flags.wait ? yield* threadIsIdle(tools, threadId) : false;
+          const clientRequestId = Option.getOrUndefined(flags.clientRequestId);
           const sent = yield* tools.call(
             "t3_thread_send",
-            { threadId, message, mode: flags.mode },
+            {
+              threadId,
+              message,
+              mode: flags.mode,
+              ...(clientRequestId === undefined ? {} : { clientRequestId }),
+            },
             OrchestratorMcpThreadSendResult,
           );
           if (flags.wait) {
@@ -1045,6 +1056,35 @@ const threadSendCommand = Command.make("send", {
         }),
       );
     }).pipe(reportThreadErrors),
+  ),
+);
+
+const threadJobWaitCommand = Command.make("job-wait", {
+  ...projectLocationFlags,
+  thread: threadArgument,
+  jobId: Flag.String("job-id"),
+  label: Flag.String("label").pipe(Flag.optional),
+}).pipe(
+  Command.withDescription("Set a durable independent job wait, or clear it by omitting --label."),
+  Command.withHandler((flags) =>
+    withThreadTools(
+      flags,
+      Effect.fn("cli.thread.jobWait")(function* (tools) {
+        const threadId = yield* decodeThreadId(flags.thread);
+        const jobLabel = Option.getOrUndefined(flags.label);
+        yield* tools.call(
+          "t3_thread_update",
+          {
+            threadId,
+            action: "job_wait",
+            jobId: flags.jobId,
+            ...(jobLabel === undefined ? {} : { jobLabel }),
+            clientRequestId: `external-job:${jobLabel === undefined ? "clear" : "set"}:${flags.jobId}`,
+          },
+          ThreadMetadataMcpUpdateResult,
+        );
+      }),
+    ).pipe(reportThreadErrors),
   ),
 );
 
@@ -1442,6 +1482,7 @@ export const threadCommand = Command.make("thread").pipe(
     threadStartCommand,
     threadCapabilitiesCommand,
     threadSendCommand,
+    threadJobWaitCommand,
     threadShowCommand,
     threadConfigureCommand,
     threadOrganizeCommand,

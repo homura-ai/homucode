@@ -1655,6 +1655,50 @@ it.effect("SQL queue readiness skips held runs without bypassing active work", (
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("SQL shells expose a persisted independent job wait until it clears", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* addRolledBackRecoveryCandidate("external-job-wait");
+    const initial = yield* store.getThreadProjection(threadId);
+    const at = initial.updatedAt;
+    yield* store.apply({
+      id: EventId.make("event:external-job-wait:completed"),
+      type: "run.updated",
+      threadId,
+      occurredAt: at,
+      payload: { ...initial.runs[0]!, status: "completed", completedAt: at },
+    });
+    for (const waiting of [true, false]) {
+      yield* store.apply({
+        id: EventId.make(`event:external-job-wait:${waiting}`),
+        type: "thread.metadata-updated",
+        threadId,
+        occurredAt: at,
+        payload: {
+          ...initial.thread,
+          externalJobWaits: waiting ? [{ id: "job", label: "Waiting for job" }] : [],
+        },
+      });
+      const listed = (yield* store.getShellSnapshot()).threads.find((row) => row.id === threadId);
+      for (const shell of [yield* store.getThreadShell(threadId), listed]) {
+        assert.deepEqual(
+          shell?.pendingBackgroundTasks?.filter((task) => task.taskId === "external-job:job"),
+          waiting
+            ? [
+                {
+                  taskId: "external-job:job",
+                  description: "Waiting for job",
+                  kind: "background_task",
+                },
+              ]
+            : [],
+        );
+      }
+      yield* assertShellIndexCoversShells();
+    }
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("SQL shells flag only an active turn blocked solely on T3 thread waits", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;

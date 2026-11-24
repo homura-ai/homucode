@@ -1,4 +1,5 @@
 import type {
+  OrchestrationV2AppThread,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderThread,
   OrchestrationV2Run,
@@ -273,6 +274,7 @@ export function derivePendingBackgroundWork(input: {
   /** Excludes rolled-back runs; optional only when the caller already filtered them, as SQL shell reads do. */
   readonly runs?: ReadonlyArray<PendingBackgroundWorkRun>;
   readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
+  readonly externalJobWaits?: OrchestrationV2AppThread["externalJobWaits"];
 }): ReadonlyArray<PendingBackgroundWorkTask> {
   const hasActiveRun =
     input.hasActiveRun ??
@@ -283,14 +285,21 @@ export function derivePendingBackgroundWork(input: {
   if (hasActiveRun) {
     return [];
   }
+  const externalTasks = (input.externalJobWaits ?? []).map(({ id, label }) => ({
+    taskId: `external-job:${id}`,
+    description: label,
+    kind: "background_task" as const,
+  }));
   if (input.latestRun == null) {
-    return pullRequestWatchTasks(input.pullRequests);
+    return [...externalTasks, ...pullRequestWatchTasks(input.pullRequests)];
   }
   if (!isLatestRunSettledForBackgroundWait(input.latestRun)) {
-    return [];
+    return externalTasks;
   }
 
-  const byTaskId = new Map<string, PendingBackgroundWorkTask>();
+  const byTaskId = new Map<string, PendingBackgroundWorkTask>(
+    externalTasks.map((task) => [task.taskId, task]),
+  );
 
   const providerThreads =
     input.activeProviderThreadId === undefined || input.activeProviderThreadId === null

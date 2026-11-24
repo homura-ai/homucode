@@ -516,6 +516,11 @@ const OrchestrationV2LastTitleRegeneration = Schema.Struct({
   completedAt: Schema.DateTimeUtc,
 });
 
+const ExternalJobWait = Schema.Struct({
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
+});
+
 export const OrchestrationV2AppThread = Schema.Struct({
   automationOrigin: Schema.optional(Schema.Literal("pace-v1")),
   ...OrchestrationV2CreationFields,
@@ -531,6 +536,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  externalJobWaits: Schema.optional(Schema.Array(ExternalJobWait)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   /** Issues linked to this thread; optional so pre-linking servers still decode. */
   issues: Schema.optional(Schema.Array(ThreadIssueLink)),
@@ -3416,6 +3422,12 @@ export const OrchestrationV2Command = Schema.Union([
     /** Absent keeps the thread's title ID; null removes it. */
     titleId: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     regenerateTitle: Schema.optional(Schema.Boolean),
+    externalJobWait: Schema.optional(
+      Schema.Struct({
+        id: ExternalJobWait.fields.id,
+        label: Schema.NullOr(ExternalJobWait.fields.label),
+      }),
+    ),
     branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
     expectedWorktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
