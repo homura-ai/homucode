@@ -1062,8 +1062,9 @@ const threadSendCommand = Command.make("send", {
 const threadJobWaitCommand = Command.make("job-wait", {
   ...projectLocationFlags,
   thread: threadArgument,
-  jobId: Flag.String("job-id"),
+  jobId: Flag.String("job-id").pipe(Flag.withDescription("A unique ID for this job invocation.")),
   label: Flag.String("label").pipe(Flag.optional),
+  json: jsonFlag,
 }).pipe(
   Command.withDescription("Set a durable independent job wait, or clear it by omitting --label."),
   Command.withHandler((flags) =>
@@ -1072,7 +1073,7 @@ const threadJobWaitCommand = Command.make("job-wait", {
       Effect.fn("cli.thread.jobWait")(function* (tools) {
         const threadId = yield* decodeThreadId(flags.thread);
         const jobLabel = Option.getOrUndefined(flags.label);
-        yield* tools.call(
+        const result = yield* tools.call(
           "t3_thread_update",
           {
             threadId,
@@ -1083,6 +1084,7 @@ const threadJobWaitCommand = Command.make("job-wait", {
           },
           ThreadMetadataMcpUpdateResult,
         );
+        if (flags.json) yield* printJson(result);
       }),
     ).pipe(reportThreadErrors),
   ),

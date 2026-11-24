@@ -62,10 +62,10 @@ export interface ThreadStatusLineModel {
     readonly accessibilityLabel: string;
     readonly disabled: boolean;
     readonly onPress: () => void;
-  };
+  } | null;
 }
 
-/** A thread state that closes the feed with its one action, left-aligned as on web. */
+/** A thread state that closes the feed, left-aligned as on web. */
 export function ThreadStatusLine(props: {
   readonly line: ThreadStatusLineModel;
   readonly iconColor: ColorValue;
@@ -101,18 +101,22 @@ export function ThreadStatusLine(props: {
           {body}
         </View>
       )}
-      <Text className="text-xs text-foreground-muted">·</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={action.accessibilityLabel}
-        accessibilityState={{ disabled: action.disabled }}
-        disabled={action.disabled}
-        onPress={action.onPress}
-        hitSlop={8}
-        className={`active:opacity-70 ${action.disabled ? "opacity-50" : ""}`}
-      >
-        <Text className="font-t3-medium text-xs text-foreground">{action.label}</Text>
-      </Pressable>
+      {action === null ? null : (
+        <>
+          <Text className="text-xs text-foreground-muted">·</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={action.accessibilityLabel}
+            accessibilityState={{ disabled: action.disabled }}
+            disabled={action.disabled}
+            onPress={action.onPress}
+            hitSlop={8}
+            className={`active:opacity-70 ${action.disabled ? "opacity-50" : ""}`}
+          >
+            <Text className="font-t3-medium text-xs text-foreground">{action.label}</Text>
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }

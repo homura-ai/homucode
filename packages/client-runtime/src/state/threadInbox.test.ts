@@ -44,6 +44,21 @@ describe("createInboxReturnTracker", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
   });
+
+  it("moves a thread out of Working immediately when only independent jobs hold it", () => {
+    const tracker = createInboxReturnTracker();
+    const running = thread("a", true);
+    const waiting = {
+      ...running,
+      runtime: { ...running.runtime!, status: "idle" as const },
+      pendingBackgroundTasks: [{ kind: "background_task" as const, taskId: "external-job:job" }],
+    };
+    expect(tracker.observe([running]).isWorking(running)).toBe(true);
+    expect(isThreadWorking(waiting)).toBe(false);
+    expect(tracker.observe([waiting]).isWorking(waiting)).toBe(false);
+    expect(tracker.observe([running]).isWorking(running)).toBe(true);
+  });
+
   it("keeps an open pull request watch in Working when opted in until it stops or needs input", () => {
     const tracker = createInboxReturnTracker();
     const finished = thread("a", false);

@@ -14,6 +14,7 @@ import {
 import { childThreadInputsTitle } from "@t3tools/client-runtime/state/threads";
 import { commandDisplayText } from "@t3tools/client-runtime/work-log/command-label";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
+import { isExternalJobWaitTask } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
 import { msg, T, Var } from "gt-react";
 import {
@@ -293,9 +294,15 @@ export function backgroundWorkNowItem(
           turnItems={input.turnItems}
           onOpenThread={onOpenThread}
         />
-        <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
-          {input.stopping ? <T>Stopping...</T> : <T context="verb, stops background work">Stop</T>}
-        </InlineButton>
+        {input.tasks.every(isExternalJobWaitTask) ? null : (
+          <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
+            {input.stopping ? (
+              <T>Stopping...</T>
+            ) : (
+              <T context="verb, stops background work">Stop</T>
+            )}
+          </InlineButton>
+        )}
       </>
     ),
   };

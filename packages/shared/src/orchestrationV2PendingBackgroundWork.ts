@@ -122,9 +122,13 @@ function backgroundWorkKindHoldsCompletion(kind: PendingBackgroundWorkTask["kind
 }
 
 const PULL_REQUEST_WATCH_TASK_ID = "pull-request-watch:";
+const EXTERNAL_JOB_WAIT_TASK_ID = "external-job:";
 
 export const isPullRequestWatchTask = (task: Pick<PendingBackgroundWorkTask, "taskId">) =>
   task.taskId.startsWith(PULL_REQUEST_WATCH_TASK_ID);
+
+export const isExternalJobWaitTask = (task: Pick<PendingBackgroundWorkTask, "taskId">) =>
+  task.taskId.startsWith(EXTERNAL_JOB_WAIT_TASK_ID);
 
 export function backgroundWorkBlocksWorkspaceChange(
   tasks: ReadonlyArray<Pick<PendingBackgroundWorkTask, "taskId" | "awaited">>,
@@ -286,7 +290,7 @@ export function derivePendingBackgroundWork(input: {
     return [];
   }
   const externalTasks = (input.externalJobWaits ?? []).map(({ id, label }) => ({
-    taskId: `external-job:${id}`,
+    taskId: `${EXTERNAL_JOB_WAIT_TASK_ID}${id}`,
     description: label,
     kind: "background_task" as const,
   }));
