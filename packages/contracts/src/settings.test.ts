@@ -592,20 +592,28 @@ it("defaults Claude background command holds off and persists either choice", ()
 });
 
 describe("SnoozePresetSettings", () => {
-  it("accepts sixteen presets, including days from today, and rejects a seventeenth", () => {
-    const decode = Schema.decodeUnknownSync(SnoozePresetSettings);
-    const presets = [
-      ...[15, 30, 60, 120, 240, 480, 720, 1440, 20160].map((minutes) => ({
+  it("round-trips fractional durations, long waits, and more than sixteen presets", () => {
+    const snoozePresets = [
+      ...Array.from({ length: 17 }, (_, index) => ({
         kind: "after",
-        minutes,
+        minutes: index + 0.5,
       })),
-      { kind: "at", day: "tomorrow", time: "09:00" },
-      ...[2, 4, 7, 14, 30].map((days) => ({ kind: "at", days, time: "09:00" })),
+      { kind: "after", minutes: 365 * 24 * 60 + 0.5 },
+      { kind: "at", days: 365.5, time: "09:00" },
       { kind: "at", day: "monday", time: "18:00" },
     ];
-    expect(decode(presets)).toEqual(presets);
-    expect(() => decode([...presets, { kind: "after", minutes: 5 }])).toThrow();
-    expect(() => decode([{ kind: "at", days: 31, time: "09:00" }])).toThrow();
+    expect(decodeClientServerSettingsPatch({ snoozePresets })).toEqual({ snoozePresets });
+    expect(encodeServerSettings(decodeServerSettings({ snoozePresets }))).toMatchObject({
+      snoozePresets,
+    });
+  });
+
+  it("requires positive finite durations", () => {
+    const decode = Schema.decodeUnknownSync(SnoozePresetSettings);
+    for (const amount of [0, -0.5, Infinity, NaN]) {
+      expect(() => decode([{ kind: "after", minutes: amount }])).toThrow();
+      expect(() => decode([{ kind: "at", days: amount, time: "09:00" }])).toThrow();
+    }
   });
 });
 

@@ -10807,6 +10807,7 @@
   "bf61ac437d87efe9": "Opciones de todos los menús de posponer, de la más próxima a la más lejana. Los días de la semana indican el siguiente después de hoy.",
   "8bb245539b66f335": "Restablecer las opciones de posponer al valor predeterminado",
   "d3d892e3b378a068": "Ya pasó por hoy",
+  "82228be485154325": "No hay una hora válida para reanudar más adelante",
   "f9545569e1e07fa7": "Duplicado de una opción de arriba",
   "77af97dbd00773ff": "Misma hora que una opción de arriba",
   "668b9b350f7c59c5": "Opción de posponer {number}",
@@ -10821,15 +10822,6 @@
   "3179349e81c5aa31": "Decrease",
   "9a4f982a83ded050": "Increase",
   "61c679fe5bf0e3ee": "Añadir opción",
-  "2dcb34eb2856dca0": [
-    "Hasta ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " opciones"
-  ],
   "5a15598cf35f21d5": "Cuenta oculta",
   "9a45e39fc525861b": "Ocultar cuentas de {label}",
   "7a41204a0c474da6": "Mostrar cuentas de {label}",

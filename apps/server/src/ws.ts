@@ -62,6 +62,7 @@ import {
   ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   CLIENT_CAPABILITIES_QUERY_PARAM,
   SETTINGS_SECRET_REFERENCES_CAPABILITY,
+  UNBOUNDED_SNOOZE_PRESETS_CAPABILITY,
   ORCHESTRATION_PROTOCOL_VERSION,
   OrchestrationV2StopAutoreviewerError,
   OrchestrationV2DispatchCommandError,
@@ -822,7 +823,10 @@ function hasCompatibleOrchestrationProtocol(url: URL): boolean {
 
 function readSettingsClient(url: URL) {
   const capabilities = url.searchParams.get(CLIENT_CAPABILITIES_QUERY_PARAM)?.split(",") ?? [];
-  return { secretReferences: capabilities.includes(SETTINGS_SECRET_REFERENCES_CAPABILITY) };
+  return {
+    secretReferences: capabilities.includes(SETTINGS_SECRET_REFERENCES_CAPABILITY),
+    unboundedSnoozePresets: capabilities.includes(UNBOUNDED_SNOOZE_PRESETS_CAPABILITY),
+  };
 }
 
 function shouldUseBoundedThreadSnapshot(input: {
@@ -1463,7 +1467,7 @@ export const layerWsRpc = (
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
   reportProfiles: ServerBrowser.ProfileReporter,
-  settingsClient: { readonly secretReferences: boolean },
+  settingsClient: ServerSettings.SettingsClient,
   clientDeviceName?: string,
 ) =>
   Layer.effectContext(
@@ -2824,8 +2828,12 @@ export const layerWsRpc = (
               : undefined;
             const nextPatch = { ...patch, ...(deviceHosts ? { deviceHosts } : {}) };
             const settings = yield* providerInstanceMutation === undefined
-              ? serverSettings.updateSettings(nextPatch)
-              : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch);
+              ? serverSettings.updateSettings(nextPatch, settingsClient)
+              : serverSettings.updateProviderInstance(
+                  providerInstanceMutation,
+                  nextPatch,
+                  settingsClient,
+                );
             return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,

@@ -1,9 +1,6 @@
 import { useState } from "react";
 import {
   DEFAULT_SNOOZE_PRESETS,
-  MAX_SNOOZE_PRESET_DAYS_AHEAD,
-  MAX_SNOOZE_PRESET_MINUTES,
-  MAX_SNOOZE_PRESETS,
   SnoozePresetDay,
   type SnoozePresetSetting,
 } from "@t3tools/contracts/settings";
@@ -14,7 +11,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
+import { msg, T, useGT, useLocale, useMessages } from "gt-react";
 import { PlusIcon, XIcon } from "lucide-react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -103,12 +100,11 @@ function splitMinutes(minutes: number): { amount: number; unit: DurationUnit } {
 
 function nextCandidate(presets: ReadonlyArray<SnoozePresetSetting>): SnoozePresetSetting {
   const used = new Set(presets.map(snoozePresetId));
-  return (
-    ADD_CANDIDATES.find((candidate) => !used.has(snoozePresetId(candidate))) ?? {
-      kind: "after",
-      minutes: 60,
-    }
-  );
+  const candidate = ADD_CANDIDATES.find((entry) => !used.has(snoozePresetId(entry)));
+  if (candidate) return candidate;
+  let minutes = 60;
+  while (used.has(snoozePresetId({ kind: "after", minutes }))) minutes += 60;
+  return { kind: "after", minutes };
 }
 
 // Row order is only display order, so it does not make a list differ from the defaults.
@@ -267,7 +263,13 @@ function SnoozePresetList(props: {
   const seenWakes = new Set<string>();
   const previews = props.presets.map((preset) => {
     const resolved = resolveSnoozePreset(preset, now, formatTime, m);
-    if (resolved === null) return { tone: "muted", text: gt("Passed for today") } as const;
+    if (resolved === null) {
+      const passedToday = preset.kind === "at" && "day" in preset && preset.day === "today";
+      return {
+        tone: "muted",
+        text: passedToday ? gt("Passed for today") : gt("No valid future wake time"),
+      } as const;
+    }
     if (seenIds.has(resolved.id)) {
       return { tone: "muted", text: gt("Duplicate of an option above") } as const;
     }
@@ -341,22 +343,10 @@ function SnoozePresetList(props: {
           : gt("Menu now: {options}", { options: [gt("Custom…"), ...menuOrder].join(" · ") })}
       </p>
       <div>
-        <Button
-          variant="ghost-muted"
-          size="compact"
-          disabled={props.presets.length >= MAX_SNOOZE_PRESETS}
-          onClick={props.onAdd}
-        >
+        <Button variant="ghost-muted" size="compact" onClick={props.onAdd}>
           <PlusIcon />
           <T>Add option</T>
         </Button>
-        {props.presets.length >= MAX_SNOOZE_PRESETS ? (
-          <span className="ps-2 text-xs text-muted-foreground">
-            <T>
-              Up to <Var>{MAX_SNOOZE_PRESETS}</Var> options
-            </T>
-          </span>
-        ) : null}
       </div>
     </div>
   );
@@ -413,7 +403,6 @@ function SnoozePresetFields(props: {
           {"days" in preset ? (
             <AmountField
               value={preset.days}
-              max={MAX_SNOOZE_PRESET_DAYS_AHEAD}
               label={gt("Days")}
               onChange={(days) => onChange({ ...preset, days })}
             />
@@ -444,18 +433,20 @@ function DurationFields(props: { minutes: number; onChange: (minutes: number) =>
   const gt = useGT();
   const m = useMessages();
   // The chosen unit stays put while stepping, so 59 → 60 minutes does not jump to hours.
-  const [chosenUnit, setChosenUnit] = useState(() => splitMinutes(props.minutes).unit);
-  const unit =
-    props.minutes % UNIT_MINUTES[chosenUnit] === 0 ? chosenUnit : splitMinutes(props.minutes).unit;
+  const [unit, setUnit] = useState(() => splitMinutes(props.minutes).unit);
   const amount = props.minutes / UNIT_MINUTES[unit];
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <AmountField
         key={unit}
         value={amount}
-        max={Math.floor(MAX_SNOOZE_PRESET_MINUTES / UNIT_MINUTES[unit])}
         label={gt("Amount")}
-        onChange={(next) => props.onChange(next * UNIT_MINUTES[unit])}
+        onChange={(next) => {
+          const minutes = next * UNIT_MINUTES[unit];
+          if (!isPositiveFinite(minutes)) return false;
+          props.onChange(minutes);
+          return true;
+        }}
       />
       <Select
         value={unit}
@@ -467,8 +458,10 @@ function DurationFields(props: { minutes: number; onChange: (minutes: number) =>
         )}
         onValueChange={(value) => {
           if (value === "minutes" || value === "hours" || value === "days") {
-            setChosenUnit(value);
-            props.onChange(Math.min(amount * UNIT_MINUTES[value], MAX_SNOOZE_PRESET_MINUTES));
+            const minutes = amount * UNIT_MINUTES[value];
+            if (!isPositiveFinite(minutes)) return;
+            setUnit(value);
+            props.onChange(minutes);
           }
         }}
       >
@@ -491,11 +484,14 @@ function DurationFields(props: { minutes: number; onChange: (minutes: number) =>
   );
 }
 
+function isPositiveFinite(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
+
 function AmountField(props: {
   value: number;
-  max: number;
   label: string;
-  onChange: (value: number) => void;
+  onChange: (value: number) => boolean | void;
 }) {
   const gt = useGT();
   // Typing stays local until the field commits (blur, Enter, or a step), so half-typed
@@ -510,19 +506,18 @@ function AmountField(props: {
     <NumberField
       size="sm"
       className="w-32"
-      min={1}
-      max={props.max}
-      step={1}
+      min={0}
+      step="any"
+      format={{ maximumSignificantDigits: 21 }}
       value={draft}
       onValueChange={setDraft}
       onValueCommitted={(value) => {
-        if (value === null) {
+        if (value === null || !isPositiveFinite(value)) {
           setDraft(props.value);
           return;
         }
-        const next = Math.min(props.max, Math.max(1, Math.round(value)));
-        setDraft(next);
-        if (next !== props.value) props.onChange(next);
+        const accepted = value === props.value || props.onChange(value) !== false;
+        setDraft(accepted ? value : props.value);
       }}
     >
       <NumberFieldGroup>
