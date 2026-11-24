@@ -1209,7 +1209,7 @@ function SendSteerNowButton({
       }}
     >
       <ArrowUpIcon />
-      {sending ? gt("Stopping…") : gt("Send now")}
+      {sending ? gt("Stopping…") : <T>Send now</T>}
     </Button>
   );
 }

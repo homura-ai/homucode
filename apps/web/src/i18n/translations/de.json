@@ -4070,6 +4070,7 @@
   "6e213186f9f6f071": "Übergeordnetes Element öffnen",
   "f1c052beef9c4491": "Chosen",
   "b83b455bf8a8194e": "Eingereihte Nachricht konnte nicht gesendet werden",
+  "7e719c3c1c8e7d4b": "Nachricht zum Umlenken konnte nicht gesendet werden",
   "a0b523c9c5f35982": "{count, plural, one {{count} Nachricht in der Warteschlange} other {{count} Nachrichten in der Warteschlange}}",
   "973e99fa86d7f531": "Eingereihte Nachricht {position} von {total}, nicht gesendet",
   "0f6087c4f53c7f17": "Eine Runde mit dieser Nachricht starten ({shortcut})",

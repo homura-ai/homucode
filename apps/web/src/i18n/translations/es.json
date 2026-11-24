@@ -4066,6 +4066,7 @@
   "6e213186f9f6f071": "Abrir el principal",
   "f1c052beef9c4491": "Chosen",
   "b83b455bf8a8194e": "No se pudo enviar el mensaje en cola",
+  "7e719c3c1c8e7d4b": "No se pudo enviar el mensaje de redirección",
   "a0b523c9c5f35982": "{count, plural, one {{count} mensaje en cola} other {{count} mensajes en cola}}",
   "973e99fa86d7f531": "Mensaje en cola {position} de {total}, sin enviar",
   "0f6087c4f53c7f17": "Iniciar un turno con este mensaje ({shortcut})",

@@ -4067,6 +4067,7 @@
   "6e213186f9f6f071": "Abrir thread pai",
   "f1c052beef9c4491": "Chosen",
   "b83b455bf8a8194e": "Não foi possível enviar a mensagem na fila",
+  "7e719c3c1c8e7d4b": "Não foi possível enviar a mensagem de redirecionamento",
   "a0b523c9c5f35982": "{count, plural, one {{count} mensagem na fila} other {{count} mensagens na fila}}",
   "973e99fa86d7f531": "Mensagem {position} de {total} na fila, não enviada",
   "0f6087c4f53c7f17": "Iniciar um turno com esta mensagem ({shortcut})",

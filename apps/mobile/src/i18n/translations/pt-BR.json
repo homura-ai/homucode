@@ -4901,6 +4901,7 @@
   "339ac9045f4aac8e": "{term, select, mr {Nenhum merge request vinculado.} cr {Nenhuma solicitação de alteração vinculada.} other {Nenhum pull request vinculado.}}",
   "09e9a9f79f92f284": "{term, select, mr {Vincular merge request} cr {Vincular solicitação de alteração} other {Vincular pull request}}",
   "b83b455bf8a8194e": "Não foi possível enviar a mensagem na fila",
+  "7e719c3c1c8e7d4b": "Não foi possível enviar a mensagem de redirecionamento",
   "837e0aadf62349a2": "Automatic · {task}",
   "0489fbf8de4721d1": "Retomar fila",
   "94fa3b3639861206": "Não foi possível retomar a fila",

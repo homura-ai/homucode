@@ -4907,6 +4907,7 @@
   "339ac9045f4aac8e": "{term, select, mr {Keine verknüpften Merge Requests.} cr {Keine verknüpften Änderungsanfragen.} other {Keine verknüpften Pull Requests.}}",
   "09e9a9f79f92f284": "{term, select, mr {Merge Request verknüpfen} cr {Änderungsanfrage verknüpfen} other {Pull Request verknüpfen}}",
   "b83b455bf8a8194e": "Eingereihte Nachricht konnte nicht gesendet werden",
+  "7e719c3c1c8e7d4b": "Nachricht zum Umlenken konnte nicht gesendet werden",
   "837e0aadf62349a2": "Automatic · {task}",
   "0489fbf8de4721d1": "Warteschlange fortsetzen",
   "94fa3b3639861206": "Warteschlange konnte nicht fortgesetzt werden",

@@ -454,7 +454,7 @@ function SendSteerNowButton(props: {
     >
       <SymbolView name="arrow.up" size={13} tintColorClassName="accent-foreground-secondary" />
       <Text className="font-t3-medium text-xs text-foreground-secondary">
-        {sending ? gt("Stopping…") : gt("Send now")}
+        {sending ? gt("Stopping…") : <T>Send now</T>}
       </Text>
     </Pressable>
   );

@@ -4908,6 +4908,7 @@
   "339ac9045f4aac8e": "{term, select, mr {No linked merge requests.} cr {No linked change requests.} other {No linked pull requests.}}",
   "09e9a9f79f92f284": "{term, select, mr {Link merge request} cr {Link change request} other {Link pull request}}",
   "b83b455bf8a8194e": "Could not send queued message",
+  "7e719c3c1c8e7d4b": "Could not send steer",
   "837e0aadf62349a2": "Automatic · {task}",
   "0489fbf8de4721d1": "Resume queue",
   "94fa3b3639861206": "Could not resume queue",
