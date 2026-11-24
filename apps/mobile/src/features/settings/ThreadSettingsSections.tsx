@@ -61,7 +61,7 @@ export function SettingsLabsRouteScreen() {
           capability="fastWorktreeCheckout"
           setting="fastWorktreeCheckout"
           description={gt(
-            "On a Mac, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+            "On a Mac, or on Linux with Btrfs or XFS, clone new worktrees from a checkout cached in the Homu home folder instead of writing every file, so they share disk space until files change. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
           )}
         />
       </ScrollView>

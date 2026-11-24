@@ -2,6 +2,8 @@
 
 Everything HomuCode changes compared to upstream [T3 Code](https://github.com/pingdotgg/t3code). The [README](./README.md#changes-compared-to-t3-code) has a short summary.
 
+- **Fast worktree checkout on Linux.** Settings → Labs → Fast worktree checkout also works on Linux when the T3 home is on a filesystem with reflinks (Btrfs, XFS, bcachefs): new worktrees are reflink clones of a cached checkout, so they take almost no extra disk until files change. Upstream offers it on macOS only. Other filesystems keep Git's normal checkout and don't show the setting. See [Fast worktree checkout](./docs/user/project-settings.md#fast-worktree-checkout).
+
 - **Mobile reconnect.** Reconnect in an environment’s connection settings turns a switched-off environment back on and connects it.
 
 - **Unavailable chat models.** Web and desktop keep a missing model visible and ask you to choose an available model before sending.
