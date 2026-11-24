@@ -73,7 +73,8 @@ export function ConnectionEnvironmentRow(props: {
   const presentation = useAtomValue(
     environmentPresentations.presentationAtom(props.environment.environmentId),
   );
-  const canRetry = presentation !== null && hasSavedBearerRoute(presentation.entry);
+  const retryDisabled =
+    unsupported && (presentation === null || !hasSavedBearerRoute(presentation.entry));
   const { diagnosis, state: connectionState } = useConnectionDiagnosis(
     props.environment.environmentId,
     presentation,
@@ -89,6 +90,13 @@ export function ConnectionEnvironmentRow(props: {
     enabled &&
     (props.environment.connectionState === "connecting" ||
       props.environment.connectionState === "reconnecting");
+  const handleReconnect = () => {
+    if (unsupported) {
+      props.onSetEnabled(props.environment.environmentId, true);
+    } else {
+      props.onReconnect(props.environment.environmentId);
+    }
+  };
   const handleSave = async () => {
     const result = await props.onUpdate(props.environment.environmentId, {
       label: label.trim(),
@@ -192,7 +200,7 @@ export function ConnectionEnvironmentRow(props: {
             environment: props.environment.environmentLabel,
           })}
           style={{ alignSelf: "center" }}
-          disabled={unsupported && !canRetry}
+          disabled={retryDisabled}
           onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
           value={enabled}
         />
@@ -286,8 +294,8 @@ export function ConnectionEnvironmentRow(props: {
                 accessibilityLabel={gt("Reconnect environment")}
                 icon="arrow.clockwise"
                 variant="tonal"
-                disabled={!enabled}
-                onPress={() => props.onReconnect(props.environment.environmentId)}
+                disabled={retryDisabled}
+                onPress={handleReconnect}
               />
               <IconButton
                 accessibilityLabel={gt("Remove environment")}
@@ -318,10 +326,10 @@ export function ConnectionEnvironmentRow(props: {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={gt("Reconnect environment")}
-                accessibilityState={{ disabled: !enabled }}
+                accessibilityState={{ disabled: retryDisabled }}
                 className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70 disabled:opacity-40"
-                disabled={!enabled}
-                onPress={() => props.onReconnect(props.environment.environmentId)}
+                disabled={retryDisabled}
+                onPress={handleReconnect}
               >
                 <SymbolView
                   name="arrow.clockwise"
