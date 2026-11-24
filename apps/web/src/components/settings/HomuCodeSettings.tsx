@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { parseStatusLineTargetRate } from "@t3tools/client-runtime/status-line";
 import { useGT, T } from "gt-react";
 import { DEFAULT_UNIFIED_SETTINGS, SidebarThreadFolderStyle } from "@t3tools/contracts/settings";
 import * as Schema from "effect/Schema";
@@ -17,6 +18,8 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { ScratchEnvironmentSettings } from "./ScratchEnvironmentSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { StatusLineBurnTauControl } from "./StatusLineBurnTauControl";
+import { StatusLineEstimatorControl } from "./StatusLineEstimatorControl";
+import { StatusLineCustomBarsSettings } from "./StatusLineCustomBarsSettings";
 import { StagedBuildSettingsRow } from "./StagedBuildSettingsRow";
 import {
   SettingsPageContainer,
@@ -256,7 +259,7 @@ function AgentBehaviorSettings() {
   const mixedProjectName = useScopedSettingsMixed(["threadTitleIncludeProjectName"]);
   const mixedIdPrefix = useScopedSettingsMixed(["threadTitleIdPrefix"]);
   const depletionRatioDescription = gt(
-    "Show the time until reset as a percentage of the time until quota is projected to run out.",
+    "100% means the quota is projected to run out just at reset.",
   );
 
   return (
@@ -434,15 +437,21 @@ function AgentBehaviorSettings() {
               gt("When off, show the 5-hour limit when it is available."),
             ],
             [
+              "statusLineHideWeeklyLimit",
+              "status-line-hide-weekly-limit",
+              gt("Hide weekly limit"),
+              gt("When off, show the weekly limit when it is available."),
+            ],
+            [
               "statusLineShowSessionDepletionRatio",
               "status-line-session-depletion-ratio",
-              gt("5-hour depletion ratio"),
+              gt("5-hour quota pace"),
               depletionRatioDescription,
             ],
             [
               "statusLineShowWeeklyDepletionRatio",
               "status-line-weekly-depletion-ratio",
-              gt("Weekly depletion ratio"),
+              gt("Weekly quota pace"),
               depletionRatioDescription,
             ],
           ] as const
@@ -467,9 +476,7 @@ function AgentBehaviorSettings() {
           serverScoped
           settingKeys={["statusLineSessionBurnTauMinutes"]}
           {...searchableSetting("status-line-session-burn-rate")}
-          description={gt(
-            "A longer duration makes countdown colors less sensitive to recent usage.",
-          )}
+          description={gt("A longer duration makes the forecast less sensitive to recent usage.")}
           control={
             <StatusLineBurnTauControl
               setting="statusLineSessionBurnTauMinutes"
@@ -490,6 +497,11 @@ function AgentBehaviorSettings() {
             />
           }
         />
+        <StatusLineEstimatorRow setting="statusLineSessionRateEstimator" />
+        <StatusLineEstimatorRow setting="statusLineWeeklyRateEstimator" />
+        <StatusLineTargetRateRow setting="statusLineSessionTargetPercentPerHour" />
+        <StatusLineTargetRateRow setting="statusLineWeeklyTargetPercentPerHour" />
+        <StatusLineCustomBarsSettings />
         <SettingsRow
           serverScoped
           settingKeys={["statusLineCommand"]}
@@ -584,5 +596,82 @@ function BuildingHomuSettings() {
         </p>
       ) : null}
     </>
+  );
+}
+
+function StatusLineTargetRateRow(props: {
+  readonly setting:
+    | "statusLineSessionTargetPercentPerHour"
+    | "statusLineWeeklyTargetPercentPerHour";
+}) {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
+  const updateSettings = useUpdateScopedSettings();
+  const value = useScopedSettings((settings) => settings[props.setting]);
+  const mixed = useScopedSettingsMixed([props.setting]);
+  const weekly = props.setting === "statusLineWeeklyTargetPercentPerHour";
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={[props.setting]}
+      {...searchableSetting(weekly ? "status-line-weekly-target" : "status-line-session-target")}
+      description={
+        weekly
+          ? gt(
+              "Percentage points per hour at the midpoint of the color scale. Leave blank to color by quota remaining.",
+            )
+          : gt(
+              "Percentage points per hour at the midpoint of the color scale. Leave blank to color by the reset forecast.",
+            )
+      }
+      control={
+        <DraftInput
+          size="sm"
+          className="w-28"
+          inputMode="decimal"
+          aria-label={weekly ? gt("Weekly target rate") : gt("5-hour target rate")}
+          placeholder={mixed ? gt("Mixed") : gt("Default")}
+          value={mixed || value == null ? "" : String(value)}
+          normalizeDraft={(previous, next) => {
+            const rate = parseStatusLineTargetRate(next);
+            return rate === undefined ? previous : rate === null ? "" : String(rate);
+          }}
+          onCommit={(next) => {
+            const rate = parseStatusLineTargetRate(next);
+            if (rate !== undefined) updateSettings({ [props.setting]: rate });
+          }}
+        />
+      }
+    />
+  );
+}
+
+function StatusLineEstimatorRow(props: {
+  readonly setting: "statusLineSessionRateEstimator" | "statusLineWeeklyRateEstimator";
+}) {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
+  const update = useUpdateScopedSettings();
+  const value = useScopedSettings((settings) => settings[props.setting]);
+  const mixed = useScopedSettingsMixed([props.setting]);
+  const weekly = props.setting === "statusLineWeeklyRateEstimator";
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={[props.setting]}
+      {...searchableSetting(
+        weekly ? "status-line-weekly-estimator" : "status-line-session-estimator",
+      )}
+      control={
+        <StatusLineEstimatorControl
+          label={weekly ? gt("Weekly rate estimator") : gt("5-hour rate estimator")}
+          value={mixed ? undefined : value}
+          defaultMinutes={weekly ? 1440 : 30}
+          onChange={(estimator) => {
+            if (estimator) update({ [props.setting]: estimator });
+          }}
+        />
+      }
+    />
   );
 }

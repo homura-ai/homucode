@@ -246,6 +246,7 @@ export const make = Effect.gen(function* () {
       secretSourceCheck: true,
       statusLine: true,
       statusLineAccounting: true,
+      statusLineCustomBars: true,
       homuSetup: true,
       buildTools: true,
       projectWorktreeCleanup: true,

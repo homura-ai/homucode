@@ -857,6 +857,30 @@ function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   return limits.windows.length === 0 ? "No limits reported." : null;
 }
 
+export function statusLineWindowModels(window: Pick<ServerProviderUsageWindow, "id" | "modelIds">) {
+  return window.modelIds ?? (window.id === "seven_day_fable" ? ["claude-fable"] : undefined);
+}
+
+// API-equivalent dollars per full weekly allowance, measured on pbox in November 2026.
+export function weeklyAllowanceUsd(
+  provider: "codex" | "claude",
+  plan: string | undefined,
+  model: string,
+) {
+  if (provider === "codex") {
+    if (plan === "ChatGPT Pro 100 Subscription") return 489;
+    if (plan === "ChatGPT Edu Plus Subscription") return 64;
+  } else if (plan === "Ultra" || plan === "Claude Ultra Subscription") {
+    if (/(?:^|[-/])fable(?:-|$)/i.test(model)) return 811;
+    if (/(?:^|[-/])(?:opus|sonnet|haiku)(?:-|$)/i.test(model)) return 1447;
+  }
+  return null;
+}
+
+export function statusLineAccountKey(sourceId: string, accountId: string): string {
+  return JSON.stringify([sourceId, accountId]);
+}
+
 export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }

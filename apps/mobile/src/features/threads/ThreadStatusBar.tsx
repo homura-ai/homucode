@@ -1,6 +1,12 @@
 import { useGT } from "gt-react-native";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import { isManagedSettingPath, type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
+import { useNavigation } from "@react-navigation/native";
+import {
+  isManagedSettingPath,
+  type EnvironmentId,
+  type ScopedThreadRef,
+  type StatusLineRenderResult,
+} from "@t3tools/contracts";
 import {
   type AnsiSegment,
   buildStatusLineInput,
@@ -27,6 +33,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { StatusLineTypography } from "./StatusLineTypography";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
+import { Button } from "../../components/ui/Button";
 import { useBarOverlap } from "../../components/ui/useBarInset";
 import { SetThreadBarInsetConsumed } from "./thread-status-bar-inset";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -38,6 +45,7 @@ import {
 } from "./ThreadStatusDials";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { StatusLineBurnTauControl } from "../settings/components/StatusLineBurnTauControl";
+import { openSettings } from "../settings/settings-navigation";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import { DEFAULT_BASE_FONT_SIZE } from "../../lib/appearancePreferences";
@@ -116,21 +124,21 @@ function CommandLine(props: {
 function useStatusLineCommand(
   props: ThreadStatusSource,
   source: StatusLineInputSource,
-  command: string,
+  commandKey: string,
+  mode: "text" | "metrics",
 ) {
   const { createdAt, environmentId } = props;
   const registry = useContext(RegistryContext);
-  const inputKey = command ? JSON.stringify(buildStatusLineInput(source)) : "";
-  const sessionKey = `${environmentId}:${source.threadId}`;
+  const inputKey = commandKey ? JSON.stringify(buildStatusLineInput(source)) : "";
+  const sessionKey = JSON.stringify([environmentId, source.threadId, mode, commandKey]);
   const [result, setResult] = useState<{
     readonly sessionKey: string;
-    readonly command: string;
-    readonly text: string;
-    readonly error: string | null;
-  } | null>(null);
+    readonly response: StatusLineRenderResult | null;
+  }>({ sessionKey, response: null });
+  if (result.sessionKey !== sessionKey) setResult({ sessionKey, response: null });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the server's custom status line command
   useEffect(() => {
-    if (!command) return;
+    if (!commandKey) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const draw = async () => {
@@ -139,17 +147,14 @@ function useStatusLineCommand(
         const response = await runAtomCommand(
           registry,
           serverEnvironment.renderStatusLine,
-          { environmentId, input: { input } },
+          { environmentId, input: mode === "metrics" ? { input, mode } : { input } },
           { reportFailure: false },
         );
         if (cancelled) return;
         if (response._tag === "Success") {
-          setResult({
-            sessionKey,
-            command,
-            text: response.value.text,
-            error: response.value.error ?? null,
-          });
+          setResult((current) =>
+            current.sessionKey === sessionKey ? { sessionKey, response: response.value } : current,
+          );
         }
       }
       timer = setTimeout(() => void draw(), REFRESH_MS);
@@ -159,11 +164,9 @@ function useStatusLineCommand(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [command, inputKey, createdAt, environmentId, sessionKey, registry]);
+  }, [commandKey, inputKey, createdAt, environmentId, mode, sessionKey, registry]);
 
-  return command !== "" && result?.sessionKey === sessionKey && result.command === command
-    ? result
-    : null;
+  return commandKey && result.sessionKey === sessionKey ? result.response : null;
 }
 
 export function ThreadStatusBar(
@@ -173,6 +176,7 @@ export function ThreadStatusBar(
   },
 ) {
   const gt = useGT();
+  const navigation = useNavigation();
   const { fontScale: systemFontScale } = useWindowDimensions();
   const { appearance } = useAppearancePreferences();
   const fontScale = (systemFontScale * appearance.baseFontSize) / DEFAULT_BASE_FONT_SIZE;
@@ -183,6 +187,25 @@ export function ThreadStatusBar(
     config?.environment.capabilities.statusLine === true &&
     config.settings.statusLineEnabled !== false;
   const custom = enabled ? (config.settings.statusLineCommand ?? "") : "";
+  const customBars =
+    config?.environment.capabilities.statusLineCustomBars === true
+      ? config.settings.statusLineCustomBars
+      : undefined;
+  const metricsCommand =
+    enabled && !custom && customBars?.some((bar) => bar.visible && bar.source.type === "metric")
+      ? (config?.settings.statusLineMetricsCommand ?? "")
+      : "";
+  const startCommands =
+    enabled && !custom
+      ? (customBars ?? []).flatMap(({ id, visible, source }) =>
+          visible && source.type === "usage" && source.window.kind === "command"
+            ? [[id, source.window.command]]
+            : [],
+        )
+      : [];
+  const commandKey =
+    custom ||
+    (startCommands.length > 0 ? JSON.stringify([metricsCommand, startCommands]) : metricsCommand);
   const contextWindow = useThreadContextWindow(props.thread);
   const accounting = useAtomValue(
     enabled &&
@@ -206,16 +229,31 @@ export function ThreadStatusBar(
     nowMs,
     accounting,
     hideSessionLimit: config?.settings.statusLineHideSessionLimit === true,
-    showSessionDepletionRatio: config?.settings.statusLineShowSessionDepletionRatio === true,
-    showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,
+    hideWeeklyLimit: config?.settings.statusLineHideWeeklyLimit === true,
+    showSessionDepletionRatio: config?.settings.statusLineShowSessionDepletionRatio !== false,
+    showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio !== false,
     statusLineSessionBurnTauMinutes: config?.settings.statusLineSessionBurnTauMinutes,
     statusLineWeeklyBurnTauMinutes: config?.settings.statusLineWeeklyBurnTauMinutes,
+    statusLineSessionRateEstimator: config?.settings.statusLineSessionRateEstimator,
+    statusLineWeeklyRateEstimator: config?.settings.statusLineWeeklyRateEstimator,
+    statusLineSessionTargetPercentPerHour: config?.settings.statusLineSessionTargetPercentPerHour,
+    statusLineWeeklyTargetPercentPerHour: config?.settings.statusLineWeeklyTargetPercentPerHour,
+    statusLineAccountNames: config?.settings.statusLineAccountNames,
+    statusLineBarOrder: config?.settings.statusLineBarOrder,
+    statusLineCustomBars: customBars,
   };
-  const command = useStatusLineCommand(props, source, custom);
-  const stats = enabled && !custom ? buildStatusLineStats(source) : null;
-  const lines = command === null ? [] : parseAnsiLines(command.text);
+  const result = useStatusLineCommand(props, source, commandKey, custom ? "text" : "metrics");
+  const stats =
+    enabled && !custom
+      ? buildStatusLineStats({
+          ...source,
+          statusLineMetrics: result?.metrics,
+          customStarts: result?.customStarts,
+        })
+      : null;
+  const lines = custom && result !== null ? parseAnsiLines(result.text) : [];
   const firstLine = lines.find((line) => line.length > 0);
-  const error = firstLine === undefined ? command?.error : null;
+  const error = custom && firstLine === undefined ? result?.error : null;
   const minimumWidth = stats === null ? 200 : minimumStatusDialWidth(stats, fontScale);
   const titleRoom = 120 * fontScale + 20;
   const inlineRoom = paneWidth - props.controlsWidth - titleRoom;
@@ -318,6 +356,15 @@ export function ThreadStatusBar(
                 ))}
               </View>
             ) : null}
+            <Button
+              label={gt("HomuCode settings")}
+              size="compact"
+              tone="text"
+              onPress={() => {
+                setExpanded(false);
+                openSettings(navigation, "SettingsHomuCode");
+              }}
+            />
           </ScreenScrollView>
         </Sheet>
       ) : null}

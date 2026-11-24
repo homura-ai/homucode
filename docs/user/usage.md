@@ -199,6 +199,15 @@ This connection supplies usage information; configure
 the provider separately to send agent requests through the hub. Remove the hub from the same
 settings section when you no longer need it.
 
+### Attribute requests to subscription accounts
+
+Enable `CLI_PROXY_USAGE_LEDGER_DIR` on a CLIProxyAPI build with ledger support.
+In HomuCode's **Usage providers** settings, set the hub's **Usage ledger folder** to the
+same directory as seen by the HomuCode server. Each proxy needs its own directory.
+HomuCode uses recorded thread IDs and the routed credential to estimate usage per
+account and to drive HomuCode-only grouped bars. Requests made before logging began
+have no account attribution.
+
 ## Subscription usage widget
 
 Add **Subscription usage** from your iOS or Android widget gallery to see remaining Codex and

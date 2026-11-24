@@ -410,6 +410,7 @@ export function applyServerSettingsPatch(
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
     syncedClientSettings: syncedClientSettingsPatch,
+    statusLineAccountNames,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -507,6 +508,7 @@ export function applyServerSettingsPatch(
     ...next,
     favorites,
     providerModelPreferences: nextModelPreferences,
+    statusLineAccountNames: statusLineAccountNames ?? current.statusLineAccountNames,
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

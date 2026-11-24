@@ -10,15 +10,23 @@ import {
   settingsSecretLiteral,
   type UsageLimitSourceId,
   type UsageLimitSourceSnapshot,
+  type UsageLimitSourceAccount,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import { codexModelCooldownAt, usageLimitSourceAtEndpoint } from "@t3tools/shared/usageLimits";
+import {
+  codexModelCooldownAt,
+  usageLimitSourceAtEndpoint,
+  weeklyAllowanceUsd,
+} from "@t3tools/shared/usageLimits";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
@@ -30,6 +38,13 @@ import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretReso
 import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 import * as UsageBurnRate from "../statusLine/UsageBurnRate.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as UsageService from "./UsageService.ts";
+import {
+  createStatusLineUsageLedgerCache,
+  readStatusLineUsageLedger,
+  statusLineExecutionPriceRecord,
+} from "../statusLine/StatusLineUsageLedger.ts";
 import * as Settings from "../serverSettings.ts";
 import { windowLimitsModel } from "../provider/claudeUsageLimits.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
@@ -118,6 +133,122 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* Settings.ServerSettingsService;
   const secrets = yield* SecretResolver.SecretResolver;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+  const projection = yield* Effect.serviceOption(ProjectionStore.ProjectionStoreV2);
+  const usage = yield* Effect.serviceOption(UsageService.UsageService);
+  const fs = yield* Effect.serviceOption(FileSystem.FileSystem);
+  const path = yield* Effect.serviceOption(Path.Path);
+  const ledgerCache = createStatusLineUsageLedgerCache();
+  const recordAccounts = Effect.fn("UsageLimitSources.recordAccounts")(function* (
+    hub: UsageLimitSourceSnapshot,
+    config: UsageLimitSourceConfig,
+  ) {
+    const directory = config.usageLedgerDir;
+    const chargesByAccount = new Map<string, UsageBurnRate.StatusLineAccountCharge[]>();
+    if (
+      directory &&
+      Option.isSome(projection) &&
+      Option.isSome(usage) &&
+      Option.isSome(fs) &&
+      Option.isSome(path)
+    ) {
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      const executions = yield* readStatusLineUsageLedger(
+        directory,
+        now - weekMs - 86_400_000,
+        now,
+        ledgerCache,
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs.value),
+        Effect.provideService(Path.Path, path.value),
+      );
+      if (executions.length > 0) {
+        const ids = [
+          ...new Set(executions.flatMap((entry) => (entry.thread_id ? [entry.thread_id] : []))),
+        ];
+        const known = yield* projection.value
+          .knownNativeThreadIds(ids)
+          .pipe(Effect.orElseSucceed(() => new Set<string>()));
+        for (const provider of ["codex", "claude"] as const) {
+          const driver = provider === "claude" ? "claudeAgent" : "codex";
+          const accounts = new Map(
+            hub.accounts
+              .filter((account) => account.driver === driver && account.authIndex)
+              .map((account) => [account.authIndex, account]),
+          );
+          if (accounts.size === 0) continue;
+          const records = executions.flatMap((entry) => {
+            if (
+              entry.failed ||
+              entry.provider !== provider ||
+              !entry.thread_id ||
+              !known.has(entry.thread_id)
+            )
+              return [];
+            const account = accounts.get(entry.auth_index);
+            const record = statusLineExecutionPriceRecord(entry);
+            if (
+              !account?.quotaAccountFingerprint ||
+              account.quotaAccountFingerprint !== entry.account_fingerprint ||
+              !record
+            )
+              return [];
+            const plan =
+              provider === "claude" && account.plan === "Claude Subscription" && config.claudeUltra
+                ? "Claude Ultra Subscription"
+                : account.plan;
+            const allowance = weeklyAllowanceUsd(provider, plan, entry.model);
+            return allowance === null ? [] : [{ entry, record, account, allowance }];
+          });
+          const prices = yield* usage.value
+            .priceRecords(
+              provider,
+              records.map((row) => row.record),
+            )
+            .pipe(Effect.orElseSucceed(() => []));
+          for (const [index, row] of records.entries()) {
+            const price = prices[index];
+            if (!price || price.costSource === "unpriced") continue;
+            let charges = chargesByAccount.get(row.account.id);
+            if (!charges) {
+              charges = [];
+              chargesByAccount.set(row.account.id, charges);
+            }
+            charges.push({
+              atMs: Date.parse(row.entry.timestamp),
+              percent: (100 * price.costUsd) / row.allowance,
+              model: row.entry.model,
+            });
+          }
+        }
+      }
+    }
+    return yield* Effect.forEach(hub.accounts, (account: UsageLimitSourceAccount) => {
+      const charges = chargesByAccount.get(account.id);
+      const coverageStartMs = charges?.reduce(
+        (first, charge) => Math.min(first, charge.atMs),
+        Infinity,
+      );
+      return burnRate
+        .record(
+          [
+            "hub",
+            hub.endpoint,
+            hub.id,
+            account.driver,
+            account.id,
+            account.email,
+            account.workspaceId,
+            account.quotaAccountFingerprint,
+            account.usageLimits.credentialFingerprint,
+          ],
+          account.usageLimits,
+          charges,
+          coverageStartMs,
+        )
+        .pipe(Effect.map((usageLimits) => ({ ...account, usageLimits })));
+    });
+  });
   const readManagementKey = Effect.fn("UsageLimitSources.readManagementKey")(function* (
     config: UsageLimitSourceConfig,
   ) {
@@ -159,27 +290,12 @@ export const make = Effect.gen(function* () {
       return { ...base, accounts: [], error: accounts.failure.detail };
     }
     const { codexModelCooldowns, accounts: readings } = accounts.success;
-    return {
+    const snapshot = {
       ...base,
       ...(codexModelCooldowns === undefined ? {} : { codexModelCooldowns }),
-      accounts: yield* Effect.forEach(readings, (account) =>
-        burnRate
-          .record(
-            [
-              "hub",
-              base.endpoint,
-              id,
-              account.driver,
-              account.id,
-              account.email,
-              account.workspaceId,
-              account.usageLimits.credentialFingerprint,
-            ],
-            account.usageLimits,
-          )
-          .pipe(Effect.map((usageLimits) => ({ ...account, usageLimits }))),
-      ),
+      accounts: readings,
     };
+    return { ...snapshot, accounts: yield* recordAccounts(snapshot, config) };
   });
 
   const publish = Effect.fn("UsageLimitSources.publish")(function* (
@@ -322,6 +438,27 @@ export const make = Effect.gen(function* () {
           : Effect.succeed(false),
       ),
       Effect.flatMap((shouldRun) => (shouldRun ? refresh : Effect.void)),
+      Effect.ignoreCause({ log: true }),
+    ),
+  ).pipe(Effect.forkScoped);
+
+  const refreshLedger = Effect.fn("UsageLimitSources.refreshLedger")(function* () {
+    const settings = yield* settingsService.getSettings;
+    const snapshots = yield* Ref.get(stateRef);
+    const next = yield* Effect.forEach(snapshots, (snapshot) => {
+      const config = settings.usageLimitSources[snapshot.id];
+      return config?.enabled && config.usageLedgerDir && !snapshot.error
+        ? recordAccounts(snapshot, config).pipe(
+            Effect.map((accounts) => ({ ...snapshot, accounts })),
+          )
+        : Effect.succeed(snapshot);
+    });
+    yield* publish(next);
+  }, refreshLock.withPermits(1));
+  yield* Effect.forever(
+    Effect.sleep("30 seconds").pipe(
+      Effect.andThen(backgroundPolicy.shouldRunScopeWork({ type: "provider-status" })),
+      Effect.flatMap((shouldRun) => (shouldRun ? refreshLedger() : Effect.void)),
       Effect.ignoreCause({ log: true }),
     ),
   ).pipe(Effect.forkScoped);

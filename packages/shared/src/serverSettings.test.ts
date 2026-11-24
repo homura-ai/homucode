@@ -35,6 +35,19 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("fallbackTextGenerationModelSelection", () => {
+  it("clears an account name when the replacement map omits it", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      statusLineAccountNames: { first: "One", second: "Two" },
+    });
+    expect(
+      applyServerSettingsPatch(current, { statusLineAccountNames: { second: "Two" } })
+        .statusLineAccountNames,
+    ).toEqual({ second: "Two" });
+    expect(
+      applyServerSettingsPatch(current, { statusLineAccountNames: {} }).statusLineAccountNames,
+    ).toEqual({});
+  });
+
   it("uses Big Pickle when only OpenCode is enabled", () => {
     expect(
       fallbackTextGenerationModelSelection({}, (instanceId) => instanceId === "opencode"),

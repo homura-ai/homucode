@@ -606,6 +606,9 @@ export interface ProjectionStoreV2Shape {
     fields: ReadonlyArray<K>,
     filter?: ProjectionRecordFilter,
   ) => Effect.Effect<ProjectionRecords<K>, ProjectionStoreV2Error>;
+  readonly knownNativeThreadIds: (
+    ids: readonly string[],
+  ) => Effect.Effect<ReadonlySet<string>, ProjectionStoreV2Error>;
   /** Running runs and their provider turns, from one snapshot. */
   readonly getRunningRunRecords: (
     threadId: ThreadId,
@@ -6990,6 +6993,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       (effect, threadId) => effect.pipe(Effect.mapError(controlReadError(threadId))),
     );
 
+    const knownNativeThreadIds = Effect.fn("ProjectionStore.knownNativeThreadIds")(
+      function* (ids: readonly string[]) {
+        if (ids.length === 0) return new Set<string>();
+        const rows = yield* sql<{ readonly native_id: string }>`
+        SELECT DISTINCT lower(json_extract(payload_json, '$.nativeThreadRef.nativeId')) AS native_id
+        FROM orchestration_v2_projection_provider_threads
+        WHERE json_extract(payload_json, '$.nativeThreadRef.strength') = 'strong'
+          AND lower(json_extract(payload_json, '$.nativeThreadRef.nativeId'))
+            IN (SELECT value FROM json_each(${encodeIdList(ids)}))
+      `;
+        return new Set(rows.map((row) => row.native_id));
+      },
+      Effect.mapError((error) => shellSnapshotReadError(error)),
+    );
+
     const getThreadRecords: ProjectionStoreV2Shape["getThreadRecords"] = (
       threadId,
       fields,
@@ -9977,6 +9995,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         ),
       getThreadRecords: (threadId, fields, filter) =>
         getThreadRecords(threadId, fields, filter).pipe(NodeSqliteClient.readOnly),
+      knownNativeThreadIds: readOnReader(knownNativeThreadIds),
       getRunningRunRecords: readOnReader(getRunningRunRecords),
       getMessageRunRecords: readOnReader(getMessageRunRecords),
       getRuntimeRequest: readOnReader(getRuntimeRequest),

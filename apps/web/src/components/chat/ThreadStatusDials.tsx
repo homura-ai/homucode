@@ -5,6 +5,7 @@ import {
   formatStatusLineTokens,
   statusLineCacheRisk,
   statusLineQuotaColorPercent,
+  orderStatusLineBars,
   statusLineGaugePercent,
   statusLineGaugeTickRotation,
   statusLineLimitEnded,
@@ -23,7 +24,7 @@ import {
   TimerIcon,
   ClockIcon,
 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { observeResize } from "~/lib/observeResize";
 import type { MessageResolver } from "../../i18n/messages";
 
@@ -148,7 +149,7 @@ function LimitDial(props: {
   const depletionRatio =
     depletionRatioPercent === undefined
       ? null
-      : gt("Reset / depletion {percent}%", { percent: depletionRatioPercent });
+      : gt("Quota pace {percent}%", { percent: depletionRatioPercent });
   return (
     <Dial
       percent={remainingPercent}
@@ -298,31 +299,68 @@ export function StatusDialStrip(props: {
             )}
           </span>
         )}
-        {stats.fiveHour === null ? null : (
-          <span ref={fiveHourRef} className={visibility.fiveHour ? "shrink-0" : HIDDEN_DIAL}>
-            <LimitDial limit={stats.fiveHour} nowMs={nowMs} name="5h" title={gt("5-hour limit")} />
-          </span>
-        )}
-        <span ref={weeklyRef} className="contents">
-          {weeklyLimits.map((limit, index) => {
-            const account = limit.label === null ? "" : ` · ${limit.label}`;
-            return (
-              <span key={limit.id} className={index < visibility.weekly ? "shrink-0" : HIDDEN_DIAL}>
-                <LimitDial
-                  limit={limit}
-                  nowMs={nowMs}
-                  name={
-                    <CompactLabel
-                      label={gt("week", { $context: "weekly usage limit" }) + account}
-                      short={gt("wk", { $context: "short label for weekly usage" }) + account}
+        {orderStatusLineBars(
+          [
+            {
+              id: "session",
+              nodes:
+                stats.fiveHour === null ? null : (
+                  <span
+                    ref={fiveHourRef}
+                    className={visibility.fiveHour ? "shrink-0" : HIDDEN_DIAL}
+                  >
+                    <LimitDial
+                      limit={stats.fiveHour}
+                      nowMs={nowMs}
+                      name="5h"
+                      title={gt("5-hour limit")}
                     />
-                  }
-                  title={gt("Weekly limit") + account}
-                />
-              </span>
-            );
-          })}
-        </span>
+                  </span>
+                ),
+            },
+            {
+              id: "weekly",
+              nodes: (
+                <span ref={weeklyRef} className="contents">
+                  {weeklyLimits.map((limit, index) => {
+                    const account = limit.label === null ? "" : ` · ${limit.label}`;
+                    return (
+                      <span
+                        key={limit.id}
+                        className={index < visibility.weekly ? "shrink-0" : HIDDEN_DIAL}
+                      >
+                        <LimitDial
+                          limit={limit}
+                          nowMs={nowMs}
+                          name={
+                            <CompactLabel
+                              label={gt("week", { $context: "weekly usage limit" }) + account}
+                              short={
+                                gt("wk", { $context: "short label for weekly usage" }) + account
+                              }
+                            />
+                          }
+                          title={gt("Weekly limit") + account}
+                        />
+                      </span>
+                    );
+                  })}
+                </span>
+              ),
+            },
+            ...(stats.customBars ?? []).map((bar) => ({
+              id: `custom:${bar.id}`,
+              nodes: (
+                <span className="shrink-0">
+                  <LimitDial limit={bar} nowMs={nowMs} name={bar.label} title={bar.label} />
+                </span>
+              ),
+            })),
+          ],
+          stats.barOrder,
+        ).map(({ id, nodes }) => (
+          <Fragment key={id}>{nodes}</Fragment>
+        ))}
         {threadWeeklyUsage === null ? null : (
           <Stat
             label={gt("Estimated thread share of weekly limit")}
@@ -454,7 +492,7 @@ function LimitFact(props: {
             ]),
         ...(depletionRatioPercent === undefined
           ? []
-          : [gt("Reset / depletion {percent}%", { percent: depletionRatioPercent })]),
+          : [gt("Quota pace {percent}%", { percent: depletionRatioPercent })]),
       ]}
     >
       <span className="tabular-nums" style={{ color: textColor }}>
@@ -500,19 +538,39 @@ export function StatusDialCard(props: {
               : ` of ${formatStatusLineTokens(stats.contextMaxTokens)}`}
           </Fact>
         )}
-        {stats.fiveHour === null ? null : (
-          <LimitFact name={gt("5-hour limit")} limit={stats.fiveHour} nowMs={nowMs} />
-        )}
-        {stats.weekly === null ? null : (
-          <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
-        )}
-        {stats.weeklyAccounts.map((limit) => (
-          <LimitFact
-            key={limit.id}
-            name={`${gt("Weekly limit")} · ${limit.label}`}
-            limit={limit}
-            nowMs={nowMs}
-          />
+        {orderStatusLineBars(
+          [
+            {
+              id: "session",
+              nodes:
+                stats.fiveHour === null ? null : (
+                  <LimitFact name={gt("5-hour limit")} limit={stats.fiveHour} nowMs={nowMs} />
+                ),
+            },
+            {
+              id: "weekly",
+              nodes:
+                stats.weekly === null ? (
+                  stats.weeklyAccounts.map((limit) => (
+                    <LimitFact
+                      key={limit.id}
+                      name={gt("Weekly limit") + (limit.label === null ? "" : ` · ${limit.label}`)}
+                      limit={limit}
+                      nowMs={nowMs}
+                    />
+                  ))
+                ) : (
+                  <LimitFact name={gt("Weekly limit")} limit={stats.weekly} nowMs={nowMs} />
+                ),
+            },
+            ...(stats.customBars ?? []).map((bar) => ({
+              id: `custom:${bar.id}`,
+              nodes: <LimitFact name={bar.label} limit={bar} nowMs={nowMs} />,
+            })),
+          ],
+          stats.barOrder,
+        ).map(({ id, nodes }) => (
+          <Fragment key={id}>{nodes}</Fragment>
         ))}
         {threadWeeklyUsage === null ? null : (
           <Fact

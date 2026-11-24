@@ -1,5 +1,10 @@
 import { ProviderDriverKind, ProviderInstanceId, UsageLimitSourceId } from "@t3tools/contracts";
-import type { ServerProvider, UsageLimitSourceSnapshot } from "@t3tools/contracts";
+import type {
+  ServerProvider,
+  StatusLineRenderInput,
+  StatusLineCustomBar,
+  UsageLimitSourceSnapshot,
+} from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -11,7 +16,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
-import { statusLineProxyPlans, summarizeStatusLineCost } from "./StatusLineAccounting.ts";
+import {
+  statusLineProxyPlans,
+  summarizeStatusLineAccountUsage,
+  summarizeStatusLineCost,
+} from "./StatusLineAccounting.ts";
 import * as UsageBurnRate from "./UsageBurnRate.ts";
 import type { PricedRecord, PricedUsage } from "../usage/usagePricing.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -27,12 +36,18 @@ const tempDirectory = Effect.gen(function* () {
 }).pipe(Effect.provide(NodeServices.layer));
 
 const render = (
-  settings: { statusLineEnabled?: boolean; statusLineCommand?: string },
+  settings: {
+    statusLineEnabled?: boolean;
+    statusLineCommand?: string;
+    statusLineMetricsCommand?: string;
+    statusLineCustomBars?: readonly StatusLineCustomBar[];
+  },
   input: Record<string, unknown>,
+  mode?: StatusLineRenderInput["mode"],
 ) =>
   Effect.gen(function* () {
     const statusLine = yield* StatusLine.StatusLine;
-    return yield* statusLine.render({ input });
+    return yield* statusLine.render({ input, ...(mode === undefined ? {} : { mode }) });
   }).pipe(
     Effect.provide(
       StatusLine.layer.pipe(
@@ -77,6 +92,61 @@ it.live.skipIf(windowsHost)("reports a failing command", () =>
   }),
 );
 
+it.live.skipIf(windowsHost)("runs the configured metrics command and validates its values", () =>
+  Effect.gen(function* () {
+    const settings = {
+      statusLineCommand: "echo text",
+      statusLineMetricsCommand: "cat",
+    };
+    const metric = { remainingPercent: 40, burnRatePercentPerHour: 2 };
+    assert.deepStrictEqual(yield* render(settings, { build: metric }, "metrics"), {
+      text: "",
+      metrics: { build: metric },
+    });
+    assert.deepStrictEqual(yield* render(settings, {}, undefined), { text: "text" });
+    assert.deepStrictEqual(
+      yield* render(settings, { build: { remainingPercent: 101 } }, "metrics"),
+      {
+        text: "",
+        error: "Invalid status line metrics JSON",
+      },
+    );
+    assert.deepStrictEqual(yield* render({ statusLineCommand: "echo text" }, {}, "metrics"), {
+      text: "",
+    });
+  }),
+);
+
+it.live.skipIf(windowsHost)("runs visible custom start commands independently of metrics", () =>
+  Effect.gen(function* () {
+    const result = yield* render(
+      {
+        statusLineCustomBars: [
+          {
+            id: "build",
+            label: "Build",
+            visible: true,
+            showQuotaPace: true,
+            targetPercentPerHour: null,
+            source: {
+              type: "usage",
+              basis: "percentages",
+              scope: { kind: "accounts", accountIds: ["account"] },
+              window: { kind: "command", command: "printf '2026-11-24T12:00:00Z'" },
+            },
+          },
+        ],
+      },
+      {},
+      "metrics",
+    );
+    assert.deepStrictEqual(result, {
+      text: "",
+      customStarts: { build: "2026-11-24T12:00:00.000Z" },
+    });
+  }),
+);
+
 it.live("renders nothing while disabled", () =>
   Effect.gen(function* () {
     const result = yield* render(
@@ -84,6 +154,48 @@ it.live("renders nothing while disabled", () =>
       {},
     );
     assert.deepStrictEqual(result, { text: "" });
+  }),
+);
+
+it.effect("prices each routed account separately", () =>
+  Effect.sync(() => {
+    const price: PricedUsage = {
+      costUsd: 1,
+      costSource: "modelPriced",
+      categoryCostUsd: null,
+      speedPremiumUsd: 0,
+    };
+    const result = summarizeStatusLineAccountUsage(
+      "codex",
+      [
+        {
+          accountId: "pro",
+          label: "Work",
+          plan: "ChatGPT Pro 100 Subscription",
+          model: "gpt-6.2-sol",
+        },
+        {
+          accountId: "edu",
+          label: null,
+          plan: "ChatGPT Edu Plus Subscription",
+          model: "gpt-6.2-sol",
+        },
+        {
+          accountId: "pro",
+          label: "Work",
+          plan: "ChatGPT Pro 100 Subscription",
+          model: "gpt-6.2-sol",
+        },
+      ],
+      [price, price, price],
+    );
+    assert.deepStrictEqual(result, {
+      weeklyUsageByAccount: [
+        { id: "pro", label: "Work", percent: 200 / 489 },
+        { id: "edu", label: null, percent: 100 / 64 },
+      ],
+      partial: false,
+    });
   }),
 );
 
@@ -145,6 +257,28 @@ it.effect("persists an EMA by account and window and initializes after a reset",
       const reset = yield* record("one", 5, 14.5 * hourMs);
       assert.closeTo(reset.rate, 5 / 1920, 1e-12);
       assert.strictEqual(reset.interval, undefined);
+      const now = yield* Clock.currentTimeMillis;
+      const charge = { atMs: now - 1000, percent: 0.25, model: "claude-fable-5-2" };
+      const burnRate = yield* UsageBurnRate.UsageBurnRate;
+      const readings = yield* burnRate.record(
+        ["claude", "account"],
+        {
+          checkedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+          windows: ["seven_day", "seven_day_fable"].map((id) => ({
+            id,
+            kind: "weekly" as const,
+            label: id,
+            usedPercent: 1,
+            resetsAt: DateTime.formatIso(DateTime.makeUnsafe(now + hourMs)),
+          })),
+        },
+        [charge],
+        charge.atMs,
+      );
+      assert.deepStrictEqual(
+        readings.windows.map((window) => window.homuCharges),
+        [[], [charge]],
+      );
     }).pipe(Effect.provide(recorder));
   }),
 );

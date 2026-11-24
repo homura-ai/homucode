@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { DraftInput } from "../ui/draft-input";
 import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
 import { useSearchableSetting } from "./settingsSearch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -72,10 +73,30 @@ export function UsageProviderSettings({
                 }
                 control={
                   !readOnly ? (
-                    <RemoveUsageProviderButton
-                      label={label}
-                      onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
-                    />
+                    <>
+                      <DraftInput
+                        size="sm"
+                        className="w-full sm:w-48"
+                        aria-label={gt("Usage ledger folder for {label}", { label })}
+                        placeholder={gt("Usage ledger folder")}
+                        value={source.usageLedgerDir ?? ""}
+                        onCommit={(value) => {
+                          const { usageLedgerDir: _old, ...config } = source;
+                          updateSettings({
+                            usageLimitSources: {
+                              [id]: {
+                                ...config,
+                                ...(value.trim() ? { usageLedgerDir: value.trim() } : {}),
+                              },
+                            },
+                          });
+                        }}
+                      />
+                      <RemoveUsageProviderButton
+                        label={label}
+                        onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
+                      />
+                    </>
                   ) : null
                 }
               />

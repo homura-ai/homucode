@@ -59,6 +59,11 @@ import {
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 import {
+  StatusLineCustomBar,
+  StatusLineRateEstimator,
+  StatusLineTargetRate,
+} from "./statusLine.ts";
+import {
   CloudSpeechModelId,
   SpeechAcceleration,
   SpeechCorrectionCue,
@@ -1000,6 +1005,7 @@ export const UsageLimitSourceConfig = Schema.Struct({
   url: TrimmedNonEmptyString,
   providerRoute: Schema.optional(HttpBaseUrl),
   claudeUltra: Schema.optionalKey(Schema.Boolean),
+  usageLedgerDir: Schema.optionalKey(TrimmedNonEmptyString),
   managementKey: SettingsSecretValue.pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
     secretSetting,
@@ -1749,11 +1755,12 @@ export const ServerSettings = Schema.Struct({
   statusLineHideSessionLimit: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  statusLineHideWeeklyLimit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   statusLineShowSessionDepletionRatio: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   statusLineShowWeeklyDepletionRatio: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   statusLineSessionBurnTauMinutes: StatusLineBurnTauMinutes.pipe(
     Schema.withDecodingDefault(Effect.succeed(30)),
@@ -1761,6 +1768,28 @@ export const ServerSettings = Schema.Struct({
   statusLineWeeklyBurnTauMinutes: StatusLineBurnTauMinutes.pipe(
     Schema.withDecodingDefault(Effect.succeed(1_440)),
   ),
+  statusLineSessionRateEstimator: StatusLineRateEstimator.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ kind: "ema" as const })),
+  ),
+  statusLineWeeklyRateEstimator: StatusLineRateEstimator.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ kind: "ema" as const })),
+  ),
+  statusLineSessionTargetPercentPerHour: StatusLineTargetRate.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  statusLineWeeklyTargetPercentPerHour: StatusLineTargetRate.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  statusLineAccountNames: Schema.Record(Schema.String, TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  statusLineBarOrder: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  statusLineCustomBars: Schema.Array(StatusLineCustomBar).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  statusLineMetricsCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Shell command that reads Claude Code's status line JSON on stdin. Empty runs the built-in script. */
   statusLineCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
@@ -2238,10 +2267,19 @@ export const ServerSettingsPatch = Schema.Struct({
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   statusLineEnabled: Schema.optionalKey(Schema.Boolean),
   statusLineHideSessionLimit: Schema.optionalKey(Schema.Boolean),
+  statusLineHideWeeklyLimit: Schema.optionalKey(Schema.Boolean),
   statusLineShowSessionDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineShowWeeklyDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineSessionBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
   statusLineWeeklyBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
+  statusLineSessionRateEstimator: Schema.optionalKey(StatusLineRateEstimator),
+  statusLineWeeklyRateEstimator: Schema.optionalKey(StatusLineRateEstimator),
+  statusLineSessionTargetPercentPerHour: Schema.optionalKey(StatusLineTargetRate),
+  statusLineWeeklyTargetPercentPerHour: Schema.optionalKey(StatusLineTargetRate),
+  statusLineAccountNames: Schema.optionalKey(Schema.Record(Schema.String, TrimmedNonEmptyString)),
+  statusLineBarOrder: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  statusLineCustomBars: Schema.optionalKey(Schema.Array(StatusLineCustomBar)),
+  statusLineMetricsCommand: Schema.optionalKey(TrimmedString),
   statusLineCommand: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),

@@ -650,13 +650,14 @@ export function useSettingsRestore(onRestored?: () => void) {
     )
       ? [gt("Hide 5-hour limit")]
       : []),
+    ...(settings.statusLineHideWeeklyLimit ? [gt("Hide weekly limit")] : []),
     ...(settings.statusLineShowSessionDepletionRatio !==
     DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio
-      ? [gt("5-hour depletion ratio")]
+      ? [gt("5-hour quota pace")]
       : []),
     ...(settings.statusLineShowWeeklyDepletionRatio !==
     DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio
-      ? [gt("Weekly depletion ratio")]
+      ? [gt("Weekly quota pace")]
       : []),
     ...(settings.statusLineSessionBurnTauMinutes !==
     DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes
@@ -665,6 +666,18 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.statusLineWeeklyBurnTauMinutes !==
     DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes
       ? [gt("Weekly burn-rate smoothing")]
+      : []),
+    ...(settings.statusLineSessionRateEstimator.kind !== "ema"
+      ? [gt("5-hour rate estimator")]
+      : []),
+    ...(settings.statusLineWeeklyRateEstimator.kind !== "ema" ? [gt("Weekly rate estimator")] : []),
+    ...(settings.statusLineSessionTargetPercentPerHour != null ? [gt("5-hour target rate")] : []),
+    ...(settings.statusLineWeeklyTargetPercentPerHour != null ? [gt("Weekly target rate")] : []),
+    ...(settings.statusLineBarOrder.length > 0 ? [gt("Bar order")] : []),
+    ...(Object.keys(settings.statusLineAccountNames).length > 0 ? [gt("Account name")] : []),
+    ...(settings.statusLineCustomBars.length > 0 ? [gt("Custom bars")] : []),
+    ...(settings.statusLineMetricsCommand !== DEFAULT_UNIFIED_SETTINGS.statusLineMetricsCommand
+      ? [gt("Metrics command")]
       : []),
     ...(settings.statusLineCommand !== DEFAULT_UNIFIED_SETTINGS.statusLineCommand
       ? ["Status line command"]
@@ -809,12 +822,23 @@ export function useSettingsRestore(onRestored?: () => void) {
       ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       statusLineEnabled: DEFAULT_UNIFIED_SETTINGS.statusLineEnabled,
       statusLineHideSessionLimit: DEFAULT_UNIFIED_SETTINGS.statusLineHideSessionLimit,
+      statusLineHideWeeklyLimit: DEFAULT_UNIFIED_SETTINGS.statusLineHideWeeklyLimit,
       statusLineShowSessionDepletionRatio:
         DEFAULT_UNIFIED_SETTINGS.statusLineShowSessionDepletionRatio,
       statusLineShowWeeklyDepletionRatio:
         DEFAULT_UNIFIED_SETTINGS.statusLineShowWeeklyDepletionRatio,
       statusLineSessionBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineSessionBurnTauMinutes,
       statusLineWeeklyBurnTauMinutes: DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyBurnTauMinutes,
+      statusLineSessionRateEstimator: DEFAULT_UNIFIED_SETTINGS.statusLineSessionRateEstimator,
+      statusLineWeeklyRateEstimator: DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyRateEstimator,
+      statusLineSessionTargetPercentPerHour:
+        DEFAULT_UNIFIED_SETTINGS.statusLineSessionTargetPercentPerHour,
+      statusLineWeeklyTargetPercentPerHour:
+        DEFAULT_UNIFIED_SETTINGS.statusLineWeeklyTargetPercentPerHour,
+      statusLineAccountNames: DEFAULT_UNIFIED_SETTINGS.statusLineAccountNames,
+      statusLineBarOrder: DEFAULT_UNIFIED_SETTINGS.statusLineBarOrder,
+      statusLineCustomBars: DEFAULT_UNIFIED_SETTINGS.statusLineCustomBars,
+      statusLineMetricsCommand: DEFAULT_UNIFIED_SETTINGS.statusLineMetricsCommand,
       statusLineCommand: DEFAULT_UNIFIED_SETTINGS.statusLineCommand,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmTerminalClose: DEFAULT_UNIFIED_SETTINGS.confirmTerminalClose,
