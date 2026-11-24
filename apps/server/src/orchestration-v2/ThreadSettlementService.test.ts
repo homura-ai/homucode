@@ -622,6 +622,7 @@ interface HarnessOptions {
   readonly onCloseIdle?: () => Effect.Effect<void>;
   readonly onExists?: () => Effect.Effect<void>;
   readonly cleanupQuestion?: () => boolean;
+  readonly cleanupBackgroundTasks?: () => OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly onCleanupRead?: Effect.Effect<void>;
   readonly cleanupBusy?: () => boolean;
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
@@ -746,6 +747,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         Effect.succeed(
           shell({
             activityRunStatus: options.cleanupBusy?.() ? "running" : null,
+            pendingBackgroundTasks: options.cleanupBackgroundTasks?.() ?? [],
             pendingRuntimeRequest: options.cleanupQuestion?.()
               ? {
                   id: RuntimeRequestId.make("cleanup-question"),
@@ -2550,5 +2552,36 @@ describe("isSnoozed", () => {
           );
         }),
       ),
+  );
+
+  it.effect("resumes deferred cleanup when the last independent job wait is cleared", () =>
+    Effect.gen(function* () {
+      const thread = appThread("job-cleanup", "settled", "/worktrees/job");
+      const marker = appThread("job-cleanup-marker", "settled", "/worktrees/marker");
+      let waiting = true;
+      const read = yield* Deferred.make<void>();
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads: [thread, marker],
+        existingWorktreePaths: ["/worktrees/job", "/worktrees/marker"],
+        cleanupBackgroundTasks: () =>
+          waiting ? [{ taskId: "external-job:job", kind: "background_task" }] : [],
+        onCleanupRead: Deferred.succeed(read, undefined),
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishEvent(settledEvent(thread));
+        yield* Deferred.await(read);
+        waiting = false;
+        yield* fixture.publishEvent({
+          ...settledEvent(thread),
+          type: "thread.metadata-updated",
+          payload: { ...thread, externalJobWaits: [] },
+        });
+        yield* fixture.publishEvent(settledEvent(marker));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, thread.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
   );
 });

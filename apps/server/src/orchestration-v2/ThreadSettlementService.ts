@@ -802,6 +802,10 @@ export const make = Effect.gen(function* () {
       case "thread.archived":
       case "thread.deleted":
         return backgroundGitEnabled ? enqueueFullSweep() : Effect.void;
+      case "thread.metadata-updated":
+        return event.payload.externalJobWaits?.length === 0 && deferredCleanup.has(event.threadId)
+          ? workEnded(event.threadId)
+          : Effect.void;
       case "runtime-request.updated":
         return event.payload.status !== "pending" ? workEnded(event.threadId) : Effect.void;
       case "thread.pull-request-link-updated":

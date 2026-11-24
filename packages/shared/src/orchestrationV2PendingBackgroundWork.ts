@@ -1,4 +1,5 @@
 import type {
+  OrchestrationV2AppThread,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderThread,
   OrchestrationV2Run,
@@ -121,9 +122,13 @@ function backgroundWorkKindHoldsCompletion(kind: PendingBackgroundWorkTask["kind
 }
 
 const PULL_REQUEST_WATCH_TASK_ID = "pull-request-watch:";
+const EXTERNAL_JOB_WAIT_TASK_ID = "external-job:";
 
 export const isPullRequestWatchTask = (task: Pick<PendingBackgroundWorkTask, "taskId">) =>
   task.taskId.startsWith(PULL_REQUEST_WATCH_TASK_ID);
+
+export const isExternalJobWaitTask = (task: Pick<PendingBackgroundWorkTask, "taskId">) =>
+  task.taskId.startsWith(EXTERNAL_JOB_WAIT_TASK_ID);
 
 export function backgroundWorkBlocksWorkspaceChange(
   tasks: ReadonlyArray<Pick<PendingBackgroundWorkTask, "taskId" | "awaited">>,
@@ -273,6 +278,7 @@ export function derivePendingBackgroundWork(input: {
   /** Excludes rolled-back runs; optional only when the caller already filtered them, as SQL shell reads do. */
   readonly runs?: ReadonlyArray<PendingBackgroundWorkRun>;
   readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
+  readonly externalJobWaits?: OrchestrationV2AppThread["externalJobWaits"];
 }): ReadonlyArray<PendingBackgroundWorkTask> {
   const hasActiveRun =
     input.hasActiveRun ??
@@ -283,14 +289,21 @@ export function derivePendingBackgroundWork(input: {
   if (hasActiveRun) {
     return [];
   }
+  const externalTasks = (input.externalJobWaits ?? []).map(({ id, label }) => ({
+    taskId: `${EXTERNAL_JOB_WAIT_TASK_ID}${id}`,
+    description: label,
+    kind: "background_task" as const,
+  }));
   if (input.latestRun == null) {
-    return pullRequestWatchTasks(input.pullRequests);
+    return [...externalTasks, ...pullRequestWatchTasks(input.pullRequests)];
   }
   if (!isLatestRunSettledForBackgroundWait(input.latestRun)) {
-    return [];
+    return input.latestRun.status === "rolled_back" ? externalTasks : [];
   }
 
-  const byTaskId = new Map<string, PendingBackgroundWorkTask>();
+  const byTaskId = new Map<string, PendingBackgroundWorkTask>(
+    externalTasks.map((task) => [task.taskId, task]),
+  );
 
   const providerThreads =
     input.activeProviderThreadId === undefined || input.activeProviderThreadId === null

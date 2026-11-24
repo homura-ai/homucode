@@ -30,6 +30,8 @@ Everything HomuCode changes compared to upstream [T3 Code](https://github.com/pi
 
 ## Threads and subagents
 
+- **Independent shell and tmux jobs.** A completion watcher can register a job with `t3 thread job-wait --job-id <unique-job-id> --label <description> <thread>`. When the agent turn ends, the thread stays Waiting across server restarts. The watcher can retry its completion message with `t3 thread send --client-request-id <key> --mode auto` and clear the wait with the same job ID by omitting `--label`.
+
 - **Codex model cooldowns.** When CLIProxyAPI reports that the selected model is cooling down on every available account, the server queues a new turn and starts it automatically when the cooldown expires. Web and desktop show the remaining wait. Mobile shows the cooldown reason if you try to start the queued message early, including from the upstream T3 Code app. You can still steer a running turn on the same model.
 
 - **Provider switch context.** The handoff names the source run’s model and the destination run’s selected model. When the source provider reports which model ran, the handoff uses that identifier.

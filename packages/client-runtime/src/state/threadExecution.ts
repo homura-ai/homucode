@@ -402,9 +402,10 @@ export function deriveThreadStructureRuntime(
       activeProviderThreadId: projection.thread.activeProviderThreadId,
       runs: projection.runs,
       pullRequests: projection.thread.pullRequests,
+      externalJobWaits: projection.thread.externalJobWaits,
     }),
   );
-  // A pull request watch can hold a thread that never ran.
+  // An external job or pull request watch can hold a thread that never ran.
   if (latestRun === null && !backgroundWorkHoldsRun) return null;
   const activeRunId =
     latestMatchingRun(projection, (run) => INTERRUPTIBLE_RUN_STATUSES.has(run.status))?.id ?? null;

@@ -76,6 +76,7 @@ import {
   type ProviderSubagentStatus,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
+import { isExternalJobWaitTask } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { isProviderNativeSubagentThread } from "@t3tools/contracts";
 import type { QueuedRunEdit } from "../../state/queued-run-edit";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
@@ -773,12 +774,14 @@ function ThreadDetailBody(
           threadId: props.selectedThread.id,
         });
       },
-      action: {
-        label: statusPending ? gt("Stopping...") : gt("Stop", { $context: "verb, button" }),
-        accessibilityLabel: gt("Stop background work"),
-        disabled: !props.canOperateThread || statusPending,
-        onPress: () => void runStatusAction("stop"),
-      },
+      action: props.selectedThread.pendingBackgroundTasks.every(isExternalJobWaitTask)
+        ? null
+        : {
+            label: statusPending ? gt("Stopping...") : gt("Stop", { $context: "verb, button" }),
+            accessibilityLabel: gt("Stop background work"),
+            disabled: !props.canOperateThread || statusPending,
+            onPress: () => void runStatusAction("stop"),
+          },
     };
   })();
   const lifecycleLine = ((): ThreadStatusLineModel | null => {

@@ -1592,6 +1592,27 @@ describe("deriveThreadPendingBackgroundTasks", () => {
       ),
     ).toEqual([{ taskId: "task-1", kind: "background_task" }]);
   });
+
+  it.each(["completed", "running"] as const)(
+    "shows an independent job only after the agent turn ends (%s)",
+    (status) => {
+      expect(
+        deriveThreadPendingBackgroundTasks(
+          projection({
+            thread: {
+              ...base.thread,
+              externalJobWaits: [{ id: "job-1", label: "Training job" }],
+            },
+            runs: [run(1, status)],
+          }),
+        ),
+      ).toEqual(
+        status === "completed"
+          ? [{ taskId: "external-job:job-1", description: "Training job", kind: "background_task" }]
+          : [],
+      );
+    },
+  );
 });
 
 describe("prepareRevertedMessageAttachments", () => {

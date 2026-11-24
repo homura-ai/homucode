@@ -1,5 +1,9 @@
 // @effect-diagnostics globalTimers:off - Shelf placement timers run in web and native clients, outside an Effect runtime.
-import { isPullRequestWatchTask } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import {
+  backgroundWorkHoldsCompletion,
+  isExternalJobWaitTask,
+  isPullRequestWatchTask,
+} from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "./models.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
@@ -18,6 +22,16 @@ type WorkingThreadInput = Pick<
   | "runtime"
 >;
 
+function onlyWaitingOnExternalJobs(thread: WorkingThreadInput): boolean {
+  return (
+    thread.runtime?.status === "idle" &&
+    thread.pendingBackgroundTasks.some(isExternalJobWaitTask) &&
+    !thread.pendingBackgroundTasks.some(
+      (task) => !isExternalJobWaitTask(task) && backgroundWorkHoldsCompletion([task]),
+    )
+  );
+}
+
 export function isThreadWorking(
   thread: WorkingThreadInput,
   keepWatchingPullRequests = false,
@@ -30,6 +44,7 @@ export function isThreadWorking(
     thread.runtime?.status !== "failed" &&
     thread.runtime?.lastError == null &&
     thread.pendingBackgroundTasks.some(isPullRequestWatchTask);
+  if (!watchingPullRequest && onlyWaitingOnExternalJobs(thread)) return false;
   if (
     !threadRuntimeIsActive(thread.runtime) &&
     thread.runtime?.status !== "idle" &&
@@ -275,6 +290,7 @@ export function createInboxReturnTracker() {
           !moved &&
           !excluded &&
           !endedLongAgo &&
+          !onlyWaitingOnExternalJobs(thread) &&
           (keepWatches || !previous.watchOnly)
             ? (previous.deadline ?? at + WORKING_EXIT_GRACE_MS)
             : null;

@@ -18,6 +18,30 @@ describe("backgroundWorkHoldsCompletion", () => {
 });
 
 describe("derivePendingBackgroundWork", () => {
+  it.each(["queued", "completed", "rolled_back"] as const)(
+    "keeps independent waits visible after a run ends or is rewound (%s)",
+    (status) => {
+      expect(
+        derivePendingBackgroundWork({
+          latestRun: { id: "run-1" as never, ordinal: 1, status },
+          providerThreads: [],
+          turnItems: [],
+          externalJobWaits: [{ id: "job", label: "Independent job" }],
+        }),
+      ).toEqual(
+        status === "queued"
+          ? []
+          : [
+              {
+                taskId: "external-job:job",
+                description: "Independent job",
+                kind: "background_task",
+              },
+            ],
+      );
+    },
+  );
+
   it("takes each subagent item's instance from its joined owner", () => {
     const owner = ProviderInstanceId.make("claude-owner");
     const tasks = derivePendingBackgroundWork({

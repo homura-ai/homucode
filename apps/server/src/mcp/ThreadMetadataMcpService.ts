@@ -72,6 +72,13 @@ function metadataCommand(input: {
         threadId: input.threadId,
         title: input.update.title!,
       };
+    case "job_wait":
+      return {
+        type: "thread.metadata.update",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        externalJobWait: { id: input.update.jobId!, label: input.update.jobLabel ?? null },
+      };
     case "regenerate_title":
       return {
         type: "thread.metadata.update",
