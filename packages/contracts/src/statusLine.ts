@@ -19,6 +19,7 @@ export type StatusLineAccountingInput = typeof StatusLineAccountingInput.Type;
 
 export const StatusLineAccounting = Schema.Struct({
   apiCostUsd: Schema.NullOr(Schema.Finite),
+  weeklyUsagePercent: Schema.optionalKey(Schema.Tuple([Schema.Finite, Schema.Finite])),
   subscriptionCostUsd: Schema.NullOr(Schema.Finite),
   partial: Schema.Boolean,
   apiDurationMs: Schema.NullOr(NonNegativeInt),

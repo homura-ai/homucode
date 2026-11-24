@@ -239,9 +239,10 @@ export function codexPlanLabel(planType: string | null | undefined): string | un
     case "enterprise":
       return "ChatGPT Enterprise Subscription";
     case "edu":
-    case "edu_plus":
     case "edu_pro":
       return "ChatGPT Edu Subscription";
+    case "edu_plus":
+      return "ChatGPT Edu Plus Subscription";
     case "unknown":
       return "ChatGPT Subscription";
     default:

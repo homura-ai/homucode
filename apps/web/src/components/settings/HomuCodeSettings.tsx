@@ -403,7 +403,9 @@ function AgentBehaviorSettings() {
           serverScoped
           settingKeys={["statusLineEnabled"]}
           {...searchableSetting("status-line")}
-          description={gt("Show context, usage limits, and thread cost in the top bar.")}
+          description={gt(
+            "Show context, usage limits, and estimated weekly usage per thread in the top bar.",
+          )}
           resetAction={
             settings.statusLineEnabled !== DEFAULT_UNIFIED_SETTINGS.statusLineEnabled ? (
               <SettingResetButton
@@ -461,22 +463,6 @@ function AgentBehaviorSettings() {
             }
           />
         ))}
-        <SettingsRow
-          serverScoped
-          settingKeys={["statusLineUseApiPrice"]}
-          {...searchableSetting("status-line-use-api-price")}
-          description={gt("Use API list prices instead of estimating the subscription cost.")}
-          control={
-            <ScopedSwitch
-              settingKeys={["statusLineUseApiPrice"]}
-              checked={settings.statusLineUseApiPrice}
-              onCheckedChange={(checked) =>
-                updateSettings({ statusLineUseApiPrice: Boolean(checked) })
-              }
-              aria-label={gt("Use API prices for thread cost")}
-            />
-          }
-        />
         <SettingsRow
           serverScoped
           settingKeys={["statusLineSessionBurnTauMinutes"]}

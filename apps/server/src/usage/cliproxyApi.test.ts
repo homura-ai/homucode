@@ -334,7 +334,7 @@ describe("CLIProxyAPI built-in management API", () => {
       }),
   );
 
-  it.effect("resolves a missing usage plan from current, then legacy, token plans", () =>
+  it.effect("resolves a missing or unknown usage plan from current, then legacy, token plans", () =>
     Effect.gen(function* () {
       const test = fixture({
         accounts: [
@@ -358,6 +358,7 @@ describe("CLIProxyAPI built-in management API", () => {
           status: 200,
           body: {
             ...(request.auth_index === "a" ? { plan_type: "plus" } : {}),
+            ...(request.auth_index === "b" ? { plan_type: "unknown" } : {}),
             rate_limit: { primary_window: { used_percent: 12 } },
           },
         }),

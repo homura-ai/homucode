@@ -158,11 +158,14 @@ On desktop and web, the model picker colors the reasoning effort. On mobile, the
 line colors the model and effort together. As space gets tight, it shortens the model
 name while keeping its version, such as `A6.2 hi`.
 
-Thread cost covers recorded main-agent usage in the active provider thread. It uses the
-API price and estimates a subscription share for supported plans. Claude Ultra estimates
-use 3.2% for non-Fable models and 5.7% for Fable. Turn on **Use API prices for thread cost**
-to always see API prices. A ≥ means some turns could only be partially priced or had no
-pricing data. Claude also reports API time and output style on completed turns.
+The thread’s estimated share of the weekly limit covers recorded main-agent usage in the
+active provider thread. It converts API-equivalent usage using measured weekly allowances
+for supported plans. When a proxy can route to accounts with different allowances, the
+estimate shows a range. A ≥ or a trailing + marks an estimate based on incomplete usage. Claude also
+reports API time and output style on completed turns.
+
+When CLIProxyAPI omits the plan and every Claude account on that hub uses Ultra, set
+`claudeUltra` to `true` on that entry in the server’s `usageLimitSources` settings.
 
 The projected remainder, depletion ratio, and quota dial and countdown colors all use
 the recent smoothed burn rate. Green means low risk, yellow means the quota is on pace

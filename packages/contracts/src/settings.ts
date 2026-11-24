@@ -999,6 +999,7 @@ export const UsageLimitSourceConfig = Schema.Struct({
   label: Schema.optional(TrimmedNonEmptyString),
   url: TrimmedNonEmptyString,
   providerRoute: Schema.optional(HttpBaseUrl),
+  claudeUltra: Schema.optionalKey(Schema.Boolean),
   managementKey: SettingsSecretValue.pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
     secretSetting,
@@ -1754,7 +1755,6 @@ export const ServerSettings = Schema.Struct({
   statusLineShowWeeklyDepletionRatio: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  statusLineUseApiPrice: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   statusLineSessionBurnTauMinutes: StatusLineBurnTauMinutes.pipe(
     Schema.withDecodingDefault(Effect.succeed(30)),
   ),
@@ -2240,7 +2240,6 @@ export const ServerSettingsPatch = Schema.Struct({
   statusLineHideSessionLimit: Schema.optionalKey(Schema.Boolean),
   statusLineShowSessionDepletionRatio: Schema.optionalKey(Schema.Boolean),
   statusLineShowWeeklyDepletionRatio: Schema.optionalKey(Schema.Boolean),
-  statusLineUseApiPrice: Schema.optionalKey(Schema.Boolean),
   statusLineSessionBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
   statusLineWeeklyBurnTauMinutes: Schema.optionalKey(StatusLineBurnTauMinutes),
   statusLineCommand: Schema.optionalKey(TrimmedString),

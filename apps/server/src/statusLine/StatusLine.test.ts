@@ -1,3 +1,5 @@
+import { ProviderDriverKind, ProviderInstanceId, UsageLimitSourceId } from "@t3tools/contracts";
+import type { ServerProvider, UsageLimitSourceSnapshot } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -9,7 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
-import { summarizeStatusLineCost } from "./StatusLineAccounting.ts";
+import { statusLineProxyPlans, summarizeStatusLineCost } from "./StatusLineAccounting.ts";
 import * as UsageBurnRate from "./UsageBurnRate.ts";
 import type { PricedRecord, PricedUsage } from "../usage/usagePricing.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -133,7 +135,7 @@ it.effect("persists an EMA by account and window and initializes after a reset",
   }),
 );
 
-it.effect("uses the measured plan share per priced model and leaves unpriced totals absent", () =>
+it.effect("converts measured weekly allowances per account and model", () =>
   Effect.sync(() => {
     const record = (model: string): PricedRecord => ({
       model,
@@ -155,23 +157,59 @@ it.effect("uses the measured plan share per priced model and leaves unpriced tot
     };
     const unpriced: PricedUsage = { ...priced, costUsd: 0, costSource: "unpriced" };
     const records = [record("claude-opus-5-5"), record("claude-fable-5-2")];
-    const ultra = summarizeStatusLineCost("claude", "Ultra", records, [priced, priced], false);
+    const ultra = summarizeStatusLineCost(
+      "claude",
+      { weekly: ["Ultra"], legacy: "Ultra" },
+      records,
+      [priced, priced],
+      false,
+    );
     assert.strictEqual(ultra.apiCostUsd, 20);
-    assert.closeTo(ultra.subscriptionCostUsd!, 0.89, 1e-12);
-    // CLIProxyAPI names every Claude account this way, without a tier.
-    assert.closeTo(
-      summarizeStatusLineCost("claude", "Claude Subscription", records, [priced, priced], false)
-        .subscriptionCostUsd!,
-      0.89,
-      1e-12,
+    const claudePercent = 1000 / 1447 + 1000 / 811;
+    assert.deepStrictEqual(ultra.weeklyUsagePercent, [claudePercent, claudePercent]);
+    for (const plan of ["Claude Subscription", "Claude Pro Subscription"]) {
+      assert.isUndefined(
+        summarizeStatusLineCost(
+          "claude",
+          { weekly: [plan], legacy: plan },
+          records,
+          [priced, priced],
+          false,
+        ).weeklyUsagePercent,
+      );
+    }
+    const codexRecords = [record("gpt-6.2-sol")];
+    assert.deepStrictEqual(
+      summarizeStatusLineCost(
+        "codex",
+        {
+          weekly: ["ChatGPT Pro 100 Subscription", "ChatGPT Edu Plus Subscription"],
+          legacy: undefined,
+        },
+        codexRecords,
+        [priced],
+        false,
+      ).weeklyUsagePercent,
+      [1000 / 489, 1000 / 64],
     );
     assert.strictEqual(
-      summarizeStatusLineCost("claude", "Claude Pro Subscription", records, [priced, priced], false)
-        .subscriptionCostUsd,
-      null,
+      summarizeStatusLineCost(
+        "codex",
+        { weekly: ["ChatGPT Pro 100 Subscription", "ChatGPT Edu Subscription"], legacy: undefined },
+        codexRecords,
+        [priced],
+        false,
+      ).weeklyUsagePercent,
+      undefined,
     );
     assert.deepStrictEqual(
-      summarizeStatusLineCost("claude", undefined, records, [priced, unpriced], false),
+      summarizeStatusLineCost(
+        "claude",
+        { weekly: [], legacy: undefined },
+        records,
+        [priced, unpriced],
+        false,
+      ),
       {
         apiCostUsd: 10,
         subscriptionCostUsd: null,
@@ -181,7 +219,7 @@ it.effect("uses the measured plan share per priced model and leaves unpriced tot
     assert.deepStrictEqual(
       summarizeStatusLineCost(
         "codex",
-        "ChatGPT Pro 100 Subscription",
+        { weekly: ["ChatGPT Pro 100 Subscription"], legacy: "ChatGPT Pro 100 Subscription" },
         [record("gpt-6.2-sol")],
         [unpriced],
         false,
@@ -192,5 +230,64 @@ it.effect("uses the measured plan share per priced model and leaves unpriced tot
         partial: true,
       },
     );
+  }),
+);
+
+it.effect("uses account metadata before a hub's declared Claude Ultra plan", () =>
+  Effect.sync(() => {
+    const driver = ProviderDriverKind.make("claudeAgent");
+    const checkedAt = "2026-11-20T00:00:00.000Z";
+    const source = {
+      id: UsageLimitSourceId.make("hub"),
+      kind: "cliproxy",
+      label: "Hub",
+      endpoint: "https://hub.example",
+      providerRoute: "https://proxy.example",
+      checkedAt,
+      accounts: [
+        {
+          id: "account",
+          driver,
+          email: "subscriber@example.com",
+          plan: "Claude Subscription",
+          usageLimits: { checkedAt, windows: [] },
+        },
+      ],
+    } satisfies UsageLimitSourceSnapshot;
+    const proxy: ServerProvider = {
+      instanceId: ProviderInstanceId.make("proxy"),
+      driver,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      checkedAt,
+      auth: { status: "authenticated", type: "customEndpoint", endpoint: source.providerRoute },
+      models: [],
+      slashCommands: [],
+      skills: [],
+    };
+    const declared = { ...source, claudeUltra: true };
+    assert.deepStrictEqual(statusLineProxyPlans(proxy, [proxy], [source]), {
+      weekly: ["Claude Subscription"],
+      legacy: "Claude Subscription",
+    });
+    assert.deepStrictEqual(statusLineProxyPlans(proxy, [proxy], [declared]), {
+      weekly: ["Claude Ultra Subscription"],
+      legacy: "Claude Subscription",
+    });
+    const direct: ServerProvider = {
+      ...proxy,
+      instanceId: ProviderInstanceId.make("native"),
+      auth: {
+        status: "authenticated",
+        label: "Claude Pro Subscription",
+        email: "subscriber@example.com",
+      },
+    };
+    assert.deepStrictEqual(statusLineProxyPlans(proxy, [proxy, direct], [declared]), {
+      weekly: ["Claude Pro Subscription"],
+      legacy: "Claude Subscription",
+    });
   }),
 );

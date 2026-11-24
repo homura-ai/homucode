@@ -18,7 +18,7 @@ import {
   statusLineBurnRisk,
   statusLineCacheRisk,
   statusLineColorMix,
-  statusLineDisplayCost,
+  formatStatusLineWeeklyUsage,
   statusLineNativeColorMix,
   statusLineQuotaColorPercent,
   statusLineUsageHue,
@@ -960,7 +960,8 @@ describe("buildStatusLineInput", () => {
       effort: "high",
       fastMode: false,
       version: "2.1.311",
-      cost: null,
+      threadWeeklyUsage: null,
+      threadWeeklyUsagePartial: false,
       apiTime: null,
       outputStyle: null,
       cwd: "/home/user/code",
@@ -1128,7 +1129,7 @@ describe("status line presentation", () => {
     ]).toEqual([null, 12.5, null]);
   });
 
-  it("uses known subscription prices, labels API prices, and hides missing costs", () => {
+  it("formats quota estimates and keeps API-equivalent cost available to custom commands", () => {
     const accounting = {
       apiCostUsd: 10,
       subscriptionCostUsd: 0.32,
@@ -1136,22 +1137,37 @@ describe("status line presentation", () => {
       apiDurationMs: 100,
       outputStyle: "default",
     };
-    expect(statusLineDisplayCost(accounting, false)).toEqual({
-      amount: "$0.32",
-      basis: "subscription",
-      partial: false,
-    });
-    expect(statusLineDisplayCost(accounting, true)).toEqual({
-      amount: "$10.00",
-      basis: "api",
-      partial: false,
-    });
-    expect(statusLineDisplayCost({ ...accounting, subscriptionCostUsd: null }, false)?.basis).toBe(
-      "api",
+    expect(formatStatusLineWeeklyUsage(accounting)).toBeNull();
+    expect(formatStatusLineWeeklyUsage({ ...accounting, weeklyUsagePercent: [2.04, 2.04] })).toBe(
+      "≈2.04%",
+    );
+    expect(formatStatusLineWeeklyUsage({ ...accounting, weeklyUsagePercent: [2.04, 15.625] })).toBe(
+      "≈2.04–15.63%",
     );
     expect(
-      statusLineDisplayCost({ ...accounting, apiCostUsd: null, subscriptionCostUsd: null }, false),
-    ).toBeNull();
+      formatStatusLineWeeklyUsage({
+        ...accounting,
+        weeklyUsagePercent: [2.049, 15.625],
+        partial: true,
+      }),
+    ).toBe("≈2.05–15.63%+");
+    expect(
+      formatStatusLineWeeklyUsage({
+        ...accounting,
+        weeklyUsagePercent: [0.006, 0.014],
+        partial: true,
+      }),
+    ).toBe("≈0.0060–0.014%+");
+    expect(
+      formatStatusLineWeeklyUsage({
+        ...accounting,
+        weeklyUsagePercent: [2.049, 2.049],
+        partial: true,
+      }),
+    ).toBe("≥2.04%");
+    expect(formatStatusLineWeeklyUsage({ ...accounting, weeklyUsagePercent: [0.001, 0.001] })).toBe(
+      "<0.01%",
+    );
 
     const input = buildStatusLineInput({
       threadId: "thread",

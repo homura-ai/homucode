@@ -285,8 +285,7 @@ export function ThreadStatusDialStrip(props: {
   const compactWeeklyLabel = gt("wk", { $context: "short label for weekly usage" });
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const cacheColor = cacheTextColor(stats.cachePercent ?? 100, themeAppearance);
-  const cost =
-    stats.cost === null ? null : `${stats.cost.amount}${stats.cost.basis === "api" ? " API" : ""}`;
+  const threadWeeklyUsage = stats.threadWeeklyUsage;
   const model = mobileStatusLineModelLabels(stats.modelName);
   const effort =
     stats.modelName === null || stats.effort === null ? null : effortLabel(stats.effort);
@@ -343,7 +342,7 @@ export function ThreadStatusDialStrip(props: {
     })),
     fiveHour: stats.fiveHour === null ? null : limitWidth(stats.fiveHour, "5h"),
     extras: [
-      ...item("cost", cost),
+      ...item("cost", threadWeeklyUsage),
       ...item("uptime", uptime, 16),
       ...item("cache", stats.cachePercent === null ? null : "100%", 16),
       ...(stats.inputTokens === null && stats.outputTokens === null
@@ -420,15 +419,13 @@ export function ThreadStatusDialStrip(props: {
           showDepletionRatio={layout.weeklyRatio}
         />
       ))}
-      {cost === null || !visible.has("cost") ? null : (
+      {threadWeeklyUsage === null || !visible.has("cost") ? null : (
         <View
           accessible
-          accessibilityLabel={
-            stats.cost?.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")
-          }
+          accessibilityLabel={gt("Estimated thread share of weekly limit")}
           className="shrink-0"
         >
-          <StripValue>{cost}</StripValue>
+          <StripValue>{threadWeeklyUsage}</StripValue>
         </View>
       )}
       {uptime === null || !visible.has("uptime") ? null : (
@@ -600,6 +597,7 @@ export function ThreadStatusDialDetails(props: {
   const gt = useGT();
   const { themeAppearance } = useAppearancePreferences();
   const { stats, nowMs } = props;
+  const threadWeeklyUsage = stats.threadWeeklyUsage;
   const effortStyle = effortTextStyle(stats.effort, themeAppearance);
   const uptime = statusLineUptime(props.createdAt, nowMs);
   const cacheColor = cacheTextColor(stats.cachePercent ?? 100, themeAppearance);
@@ -647,15 +645,17 @@ export function ThreadStatusDialDetails(props: {
             nowMs={nowMs}
           />
         ))}
-        {stats.cost === null ? null : (
+        {threadWeeklyUsage === null ? null : (
           <Fact
-            name={stats.cost.basis === "api" ? gt("API cost") : gt("Subscription cost estimate")}
+            name={gt("Estimated thread share of weekly limit")}
             details={[
               gt("Recorded main-agent usage for the current provider thread."),
-              ...(stats.cost.partial ? [gt("Some turns could not be priced in full.")] : []),
+              ...(stats.threadWeeklyUsagePartial
+                ? [gt("Some turns could not be priced in full.")]
+                : []),
             ]}
           >
-            {stats.cost.amount}
+            {threadWeeklyUsage}
           </Fact>
         )}
         {uptime === null ? null : <Fact name={gt("Uptime")}>{uptime}</Fact>}

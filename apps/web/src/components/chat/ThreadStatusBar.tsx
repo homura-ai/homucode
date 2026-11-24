@@ -378,10 +378,6 @@ export function ThreadStatusLineRunner(props: {
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.environment.capabilities.statusLineAccounting === true,
   );
-  const useApiPrice = useAtomValue(
-    serverEnvironment.configValueAtom(environmentId),
-    (config) => config?.settings.statusLineUseApiPrice === true,
-  );
   const accounting = useAtomValue(
     enabled && accountingSupported
       ? serverEnvironment.statusLineAccounting({
@@ -400,7 +396,6 @@ export function ThreadStatusLineRunner(props: {
     showSessionDepletionRatio,
     showWeeklyDepletionRatio,
     accounting,
-    useApiPrice,
   };
   // Only the mode in use reads the thread's state; the other key stays empty.
   const inputKey = custom ? JSON.stringify(buildStatusLineInput(source)) : "";
