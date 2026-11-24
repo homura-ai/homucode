@@ -13,6 +13,7 @@ import {
   type ServerProvider,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
+  type UsageBurnRateInterval,
   type UsageLimitSourceSnapshot,
   type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
@@ -871,6 +872,15 @@ export function isSubscriptionWeeklyWindow(
   kind: ServerProviderUsageWindow["kind"],
 ): boolean {
   return kind === "weekly" && (driver === "codex" || driver === "claudeAgent");
+}
+
+export function smoothUsageBurnRate(
+  { elapsedMs, previousRate, observedRate }: UsageBurnRateInterval,
+  tauMinutes: number,
+): number {
+  return (
+    previousRate + -Math.expm1(-elapsedMs / (tauMinutes * MINUTE)) * (observedRate - previousRate)
+  );
 }
 
 export function usageWindowForForecast(

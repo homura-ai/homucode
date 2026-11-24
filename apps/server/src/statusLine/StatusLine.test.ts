@@ -114,23 +114,37 @@ it.effect("persists an EMA by account and window and initializes after a reset",
             },
           ],
         });
-        return limits.windows[0]?.burnRatePercentPerSecond;
+        const window = limits.windows[0];
+        assert.isDefined(window);
+        assert.isDefined(window.burnRatePercentPerSecond);
+        return { rate: window.burnRatePercentPerSecond, interval: window.burnRateInterval };
       });
     const firstRate = 10 / 3600;
     const updatedRate = firstRate + (1 - Math.exp(-60 / 1800)) * (2 / 60 - firstRate);
     yield* Effect.gen(function* () {
-      assert.closeTo((yield* record("one", 10))!, firstRate, 1e-12);
+      assert.closeTo((yield* record("one", 10)).rate, firstRate, 1e-12);
       yield* TestClock.adjust("30 seconds");
-      assert.closeTo((yield* record("one", 11))!, firstRate, 1e-12);
+      assert.closeTo((yield* record("one", 11)).rate, firstRate, 1e-12);
     }).pipe(Effect.provide(recorder));
 
     yield* TestClock.adjust("30 seconds");
     // A freshly built layer has an empty memory cache.
     yield* Effect.gen(function* () {
-      assert.closeTo((yield* record("one", 12))!, updatedRate, 1e-12);
-      assert.closeTo((yield* record("two", 12))!, 12 / 3660, 1e-12);
+      assert.closeTo((yield* record("one", 12)).rate, updatedRate, 1e-12);
+      assert.closeTo((yield* record("two", 12)).rate, 12 / 3660, 1e-12);
+    }).pipe(Effect.provide(recorder));
+
+    yield* Effect.gen(function* () {
+      const cached = yield* record("one", 12);
+      assert.deepStrictEqual(cached.interval, {
+        elapsedMs: 60_000,
+        previousRate: firstRate,
+        observedRate: 2 / 60,
+      });
       yield* TestClock.adjust("60 seconds");
-      assert.closeTo((yield* record("one", 5, 14.5 * hourMs))!, 5 / 1920, 1e-12);
+      const reset = yield* record("one", 5, 14.5 * hourMs);
+      assert.closeTo(reset.rate, 5 / 1920, 1e-12);
+      assert.strictEqual(reset.interval, undefined);
     }).pipe(Effect.provide(recorder));
   }),
 );

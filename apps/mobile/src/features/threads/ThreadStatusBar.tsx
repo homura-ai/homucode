@@ -208,6 +208,8 @@ export function ThreadStatusBar(
     hideSessionLimit: config?.settings.statusLineHideSessionLimit === true,
     showSessionDepletionRatio: config?.settings.statusLineShowSessionDepletionRatio === true,
     showWeeklyDepletionRatio: config?.settings.statusLineShowWeeklyDepletionRatio === true,
+    statusLineSessionBurnTauMinutes: config?.settings.statusLineSessionBurnTauMinutes,
+    statusLineWeeklyBurnTauMinutes: config?.settings.statusLineWeeklyBurnTauMinutes,
   };
   const command = useStatusLineCommand(props, source, custom);
   const stats = enabled && !custom ? buildStatusLineStats(source) : null;

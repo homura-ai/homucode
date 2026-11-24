@@ -16,6 +16,7 @@ import {
   isSubscriptionWeeklyWindow,
   remainingPercent,
   resolveLimitAccountMetadata,
+  smoothUsageBurnRate,
   usageLimitSourceAtEndpoint,
   usageWindowForForecast,
 } from "@t3tools/shared/usageLimits";
@@ -40,11 +41,17 @@ export interface StatusLineInputSource {
   readonly showSessionDepletionRatio?: boolean;
   readonly showWeeklyDepletionRatio?: boolean;
   readonly accounting?: StatusLineAccounting | null;
+  readonly statusLineSessionBurnTauMinutes?: number | undefined;
+  readonly statusLineWeeklyBurnTauMinutes?: number | undefined;
 }
 
 export type StatusLineUsageSource = Pick<
   StatusLineInputSource,
-  "providers" | "usageLimitSources" | "nowMs"
+  | "providers"
+  | "usageLimitSources"
+  | "nowMs"
+  | "statusLineSessionBurnTauMinutes"
+  | "statusLineWeeklyBurnTauMinutes"
 >;
 
 type StatusLineUsageWindow = ServerProviderUsageWindow & {
@@ -62,11 +69,30 @@ function summaryWindow(provider: ServerProvider, window: ServerProviderUsageWind
   );
 }
 
+function applyBurnSmoothing(
+  window: ServerProviderUsageWindow,
+  source: StatusLineUsageSource,
+): ServerProviderUsageWindow {
+  const tauMinutes =
+    window.kind === "session"
+      ? source.statusLineSessionBurnTauMinutes
+      : window.kind === "weekly"
+        ? source.statusLineWeeklyBurnTauMinutes
+        : undefined;
+  return tauMinutes === undefined || window.burnRateInterval === undefined
+    ? window
+    : {
+        ...window,
+        burnRatePercentPerSecond: smoothUsageBurnRate(window.burnRateInterval, tauMinutes),
+      };
+}
+
 function hubUsageWindows(
   provider: ServerProvider,
-  { providers, usageLimitSources: sources, nowMs: now }: StatusLineUsageSource,
+  source: StatusLineUsageSource,
   includeAll: boolean,
 ): ReadonlyArray<StatusLineUsageWindow> {
+  const { providers, usageLimitSources: sources, nowMs: now } = source;
   if (!provider.auth.endpoint) return [];
   const hub = usageLimitSourceAtEndpoint(sources, provider.auth.endpoint, {
     useProviderRoute: provider.driver === "claudeAgent",
@@ -91,13 +117,15 @@ function hubUsageWindows(
         redeem: null,
         limits: {
           ...account.usageLimits,
-          windows: account.usageLimits.windows.filter(
-            (window) =>
-              (isSubscriptionWeeklyWindow(account.driver, window.kind) ||
-                window.resetsAt === undefined ||
-                Date.parse(window.resetsAt) > now) &&
-              (includeAll || summaryWindow(provider, window)),
-          ),
+          windows: account.usageLimits.windows
+            .filter(
+              (window) =>
+                (isSubscriptionWeeklyWindow(account.driver, window.kind) ||
+                  window.resetsAt === undefined ||
+                  Date.parse(window.resetsAt) > now) &&
+                (includeAll || summaryWindow(provider, window)),
+            )
+            .map((window) => applyBurnSmoothing(window, source)),
         },
       };
     });
@@ -180,7 +208,7 @@ function providerUsageWindows(
       )
       .map((window) =>
         usageWindowForForecast(
-          window,
+          applyBurnSmoothing(window, source),
           provider.driver,
           limits?.checkedAt ?? provider.checkedAt,
           source.nowMs,

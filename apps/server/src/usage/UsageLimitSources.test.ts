@@ -10,9 +10,11 @@ import {
 } from "@t3tools/contracts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -299,6 +301,84 @@ it.effect("keeps an account's last good reading when the hub's next read of it i
     ]),
   );
 });
+
+it.effect("refreshes on a hub configuration edit and ignores the first smoothing edit", () =>
+  Effect.gen(function* () {
+    const sourceId = UsageLimitSourceId.make("hub");
+    const initialRead = yield* Deferred.make<void>();
+    const settingsHandled = yield* Deferred.make<void>();
+    const hosts: string[] = [];
+    const settingsLayer = Layer.effect(
+      ServerSettings.ServerSettingsService,
+      Effect.gen(function* () {
+        const base = yield* ServerSettings.ServerSettingsService;
+        const initial = yield* base.getSettings;
+        const current = yield* Ref.make(initial);
+        const smoothing = { ...initial, statusLineWeeklyBurnTauMinutes: 360 };
+        const moved = {
+          ...smoothing,
+          usageLimitSources: {
+            [sourceId]: { ...initial.usageLimitSources[sourceId]!, url: "http://new.test:8317" },
+          },
+        };
+        const changes = Stream.concat(
+          Stream.fromEffect(Deferred.await(initialRead)).pipe(Stream.drain),
+          Stream.make(smoothing, moved).pipe(Stream.tap((value) => Ref.set(current, value))),
+        ).pipe(Stream.ensuring(Deferred.succeed(settingsHandled, undefined)));
+        return {
+          ...base,
+          getSettings: Ref.get(current),
+          streamChanges: changes,
+          subscribeChanges: Effect.succeed(changes),
+        };
+      }),
+    ).pipe(
+      Layer.provide(
+        ServerSettings.layerTest({
+          usageLimitSources: {
+            [sourceId]: {
+              kind: "cliproxy",
+              url: "http://old.test:8317",
+              managementKey: "test-key",
+              enabled: true,
+            },
+          },
+        }),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      yield* UsageLimitSources.make;
+      yield* Deferred.await(settingsHandled);
+    }).pipe(
+      Effect.provide([
+        settingsLayer,
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+          shouldRunScopeWork: () => Effect.succeed(false),
+        }),
+        Layer.succeed(SecretResolver.SecretResolver, {
+          label: (provider) => Effect.succeed(provider),
+          read: (references) => Effect.succeed(references.map(() => undefined)),
+          invalidate: () => Effect.void,
+        }),
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.gen(function* () {
+              const url = new URL(request.url);
+              if (url.pathname.endsWith("/auth-files")) {
+                hosts.push(url.hostname);
+                yield* Deferred.succeed(initialRead, undefined);
+              }
+              return HttpClientResponse.fromWeb(request, Response.json({ files: [] }));
+            }),
+          ),
+        ),
+        NodeCrypto.layer,
+      ]),
+    );
+    expect(hosts).toEqual(["old.test", "new.test"]);
+  }),
+);
 
 const NOW = Date.parse("2026-11-13T12:00:00.000Z");
 const at = (hours: number) => DateTime.formatIso(DateTime.makeUnsafe(NOW + hours * 3_600_000));

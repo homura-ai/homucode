@@ -9,6 +9,15 @@ import {
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 
+const UsageBurnRateValue = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+
+export const UsageBurnRateInterval = Schema.Struct({
+  elapsedMs: Schema.Finite.check(Schema.isGreaterThan(0)),
+  previousRate: UsageBurnRateValue,
+  observedRate: UsageBurnRateValue,
+});
+export type UsageBurnRateInterval = typeof UsageBurnRateInterval.Type;
+
 /** Stable per-provider ids let sparse updates merge with full probes. */
 export const ServerProviderUsageWindow = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -20,9 +29,8 @@ export const ServerProviderUsageWindow = Schema.Struct({
   usedPercent: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   resetsAt: Schema.optional(IsoDateTime),
   windowDurationMins: Schema.optional(NonNegativeInt),
-  burnRatePercentPerSecond: Schema.optional(
-    Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
-  ),
+  burnRatePercentPerSecond: Schema.optional(UsageBurnRateValue),
+  burnRateInterval: Schema.optionalKey(UsageBurnRateInterval),
 });
 export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
 
