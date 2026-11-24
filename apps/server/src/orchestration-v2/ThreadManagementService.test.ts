@@ -218,6 +218,36 @@ it.effect.each([
   const projectId = ProjectId.make("project:thread-management:worktree-gone");
   const threadId = ThreadId.make("thread:thread-management:worktree-gone");
   const dispatched: Array<string> = [];
+  const records = {
+    thread: {
+      id: threadId,
+      projectId,
+      deletedAt: null,
+      archivedAt: null,
+      worktreePath: "/worktrees/gone",
+      branch: "t3/gone",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+    },
+    runs: running
+      ? [
+          {
+            id: RunId.make("run:thread-management:worktree-gone"),
+            status: "running",
+            activeAttemptId: "attempt:thread-management:worktree-gone",
+          },
+        ]
+      : [],
+    providerTurns: running
+      ? [
+          {
+            runAttemptId: "attempt:thread-management:worktree-gone",
+            status: "running",
+          },
+        ]
+      : [],
+    messages: [],
+    turnItems: [],
+  } as unknown as OrchestrationV2ThreadProjection;
   const layerTest = ThreadManagementService.layerWithLegacyImporter.pipe(
     Layer.provide(
       Layer.succeed(ThreadWorktreeRestore, {
@@ -239,37 +269,9 @@ it.effect.each([
     Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
     Layer.provide(
       Layer.mock(Orchestrator.OrchestratorV2)({
-        getThreadRecords: () =>
-          Effect.succeed({
-            thread: {
-              id: threadId,
-              projectId,
-              deletedAt: null,
-              archivedAt: null,
-              worktreePath: "/worktrees/gone",
-              branch: "t3/gone",
-              modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
-            },
-            runs: running
-              ? [
-                  {
-                    id: RunId.make("run:thread-management:worktree-gone"),
-                    status: "running",
-                    activeAttemptId: "attempt:thread-management:worktree-gone",
-                  },
-                ]
-              : [],
-            providerTurns: running
-              ? [
-                  {
-                    runAttemptId: "attempt:thread-management:worktree-gone",
-                    status: "running",
-                  },
-                ]
-              : [],
-            messages: [],
-            turnItems: [],
-          } as unknown as OrchestrationV2ThreadProjection),
+        getThreadRecords: () => Effect.succeed(records),
+        getRunningRunRecords: () => Effect.succeed(records),
+        getMessageRunRecords: () => Effect.succeed(records),
         dispatch: (command) =>
           Effect.sync(() => {
             dispatched.push(command.type);

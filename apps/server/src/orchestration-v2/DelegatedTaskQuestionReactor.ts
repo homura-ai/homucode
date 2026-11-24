@@ -65,7 +65,9 @@ const make = Effect.gen(function* () {
     parentThreadId: ThreadId,
     requestIds: ReadonlyArray<RuntimeRequestId>,
   ) {
-    const parent = yield* projections.getThreadRecords(parentThreadId, ["runs"]);
+    const parent = yield* projections.getThreadRecords(parentThreadId, ["runs"], {
+      runStatuses: ["queued"],
+    });
     for (const requestId of requestIds) {
       const key = `${parentThreadId}:${requestId}`;
       const messageId = MessageId.make(`message:delegated-task-question:${key}`);

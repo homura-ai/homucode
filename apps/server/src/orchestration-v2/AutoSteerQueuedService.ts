@@ -27,7 +27,7 @@ export interface AutoSteerPromotion {
   readonly targetRunId: OrchestrationV2Run["id"];
 }
 
-function nextAutoSteerPromotion(projection: {
+export function nextAutoSteerPromotion(projection: {
   readonly thread?: object;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly messages: Parameters<typeof resolveMessageDispatchIntent>[0]["messages"];
@@ -112,6 +112,59 @@ export const runAutoSteerPass = Effect.fn("runAutoSteerPass")(function* <
   });
 });
 
+const AUTO_STEER_RUN_STATUSES = [
+  "queued",
+  "preparing",
+  "starting",
+  "running",
+  "waiting",
+] as const satisfies ReadonlyArray<OrchestrationV2Run["status"]>;
+
+/**
+ * Reads only what a promotion decision looks at: queued and active runs, their messages, the
+ * active turns and running compactions. A pass runs on most turn events, so a full read here
+ * scales with the thread's whole history.
+ */
+// Untraced: `runAutoSteerPass` already spans each read, several times a second on a busy thread.
+export const readAutoSteerRecords = Effect.fnUntraced(function* (
+  projections: ProjectionStore.ProjectionStoreV2Shape,
+  threadId: ThreadId,
+) {
+  const { thread, runs } = yield* projections.getThreadRecords(threadId, ["runs"], {
+    runStatuses: AUTO_STEER_RUN_STATUSES,
+  });
+  if (thread.archivedAt !== null || thread.deletedAt !== null) return null;
+  const queued = runs.filter((run) => run.status === "queued");
+  const active = runs.filter(isActiveRun);
+  if (active.length === 0 || !queued.some((run) => run.autoSteer === true)) {
+    return {
+      thread,
+      runs,
+      messages: [],
+      providerTurns: [],
+      providerThreads: [],
+      providerSessions: [],
+      turnItems: [],
+    };
+  }
+  const records = yield* projections.getThreadRecords(
+    threadId,
+    ["messages", "providerTurns", "providerThreads", "providerSessions", "turnItems"],
+    {
+      messageIds: [...queued, ...active].map((run) => run.userMessageId),
+      providerTurnAttemptIds: active.flatMap((run) =>
+        run.activeAttemptId === null ? [] : [run.activeAttemptId],
+      ),
+      providerThreadIds: active.flatMap((run) =>
+        run.providerThreadId === null ? [] : [run.providerThreadId],
+      ),
+      turnItemTypes: ["compaction"],
+      turnItemStatuses: ["running"],
+    },
+  );
+  return { ...records, runs };
+});
+
 export const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -123,27 +176,7 @@ export const make = Effect.gen(function* () {
     runAutoSteerPass(
       {
         dirty,
-        read: (id) =>
-          projections
-            .getThreadRecords(
-              id,
-              [
-                "runs",
-                "messages",
-                "providerTurns",
-                "providerThreads",
-                "providerSessions",
-                "turnItems",
-              ],
-              { turnItemTypes: ["compaction"], turnItemStatuses: ["running"] },
-            )
-            .pipe(
-              Effect.map((records) =>
-                records.thread.archivedAt !== null || records.thread.deletedAt !== null
-                  ? null
-                  : records,
-              ),
-            ),
+        read: (id) => readAutoSteerRecords(projections, id),
         select: nextAutoSteerPromotion,
         dispatch: (id, next) =>
           DateTime.now.pipe(
